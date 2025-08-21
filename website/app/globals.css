@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+  
+  body {
+    @apply bg-white text-gray-800;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+}
+
+@layer components {
+  .gradient-bg {
+    background: linear-gradient(135deg, #dc2929 0%, #ffffff 25%, #ffffff 75%, #226cae 100%);
+  }
+  
+  .gradient-bg-hero {
+    background: linear-gradient(135deg, #dc2929 0%, #ffffff 50%, #226cae 100%);
+  }
+  
+  .card-hover {
+    @apply transition-all duration-300 hover:shadow-xl hover:-translate-y-2;
+  }
+  
+  .text-gradient {
+    background: linear-gradient(135deg, #dc2929 0%, #226cae 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  .text-gradient-red {
+    background: linear-gradient(135deg, #dc2929 0%, #ff6b6b 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  .text-gradient-blue {
+    background: linear-gradient(135deg, #226cae 0%, #4a90e2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  
+  .btn-primary {
+    @apply bg-gradient-to-r from-red-500 to-red-600 text-white px-8 py-4 rounded-full font-semibold text-lg hover:shadow-xl transition-all duration-200 hover:scale-105;
+  }
+  
+  .btn-secondary {
+    @apply bg-gradient-to-r from-blue-500 to-blue-600 text-white px-8 py-4 rounded-full font-semibold text-lg hover:shadow-xl transition-all duration-200 hover:scale-105;
+  }
+  
+  .btn-outline {
+    @apply border-2 border-red-500 text-red-500 px-8 py-4 rounded-full font-semibold text-lg hover:bg-red-500 hover:text-white transition-all duration-200 hover:scale-105;
+  }
+  
+  .section-padding {
+    @apply py-20 px-4 sm:px-6 lg:px-8;
+  }
+  
+  .container-max {
+    @apply max-w-7xl mx-auto;
+  }
+  
+  .aspect-16-9-large {
+    @apply w-72 h-96 mx-auto rounded-3xl shadow-2xl;
+  }
+  
+  .aspect-16-9-medium {
+    @apply w-48 h-64 mx-auto rounded-2xl shadow-lg;
+  }
+  
+  .aspect-16-9-small {
+    @apply w-24 h-32 mx-auto rounded-xl shadow-md;
+  }
+  
+  .aspect-16-9-tiny {
+    @apply w-20 h-28 mx-auto rounded-lg shadow-sm;
+  }
+} 

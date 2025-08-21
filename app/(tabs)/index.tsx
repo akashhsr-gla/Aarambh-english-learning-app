@@ -1,75 +1,498 @@
+import { FontAwesome } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useEffect, useRef } from 'react';
+import { Animated, Easing, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
+import Header from '@/components/Header';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
 
 export default function HomeScreen() {
+  const navigation = useNavigation();
+  
+  // Animation values for rotation
+  const rotationAnim = useRef(new Animated.Value(0)).current;
+  
+  // Start the rotation animation when component mounts
+  useEffect(() => {
+    const startRotationAnimation = () => {
+      Animated.loop(
+        Animated.timing(rotationAnim, {
+          toValue: 1,
+          duration: 30000, // 30 seconds for a full rotation
+          easing: Easing.linear,
+          useNativeDriver: true,
+        })
+      ).start();
+    };
+    
+    startRotationAnimation();
+    
+    return () => {
+      // Clean up animation when component unmounts
+      rotationAnim.stopAnimation();
+    };
+  }, []);
+  
+  // Convert rotation value to degrees
+  const rotation = rotationAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  const handleChatPress = () => {
+    navigation.navigate('ChatScreen' as never);
+  };
+  
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
+    <View style={styles.container}>
+      <LinearGradient
+        colors={['rgba(220, 41, 41, 0.15)', 'rgba(255, 255, 255, 1)', 'rgba(255, 255, 255, 1)', 'rgba(34, 108, 174, 0.15)']}
+        locations={[0, 0.25, 0.75, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.gradientBackground}
+      />
+      
+      <ScrollView style={styles.scrollContent}>
+        {/* Header */}
+        <Header title="Home" />
+
+        {/* Title Section */}
       <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
+          <ThemedText style={styles.titleText}>Welcome back!</ThemedText>
+          <View style={styles.titleUnderline} />
+        </ThemedView>
+
+        {/* Player Info Card */}
+        <ThemedView style={styles.playerCard}>
+          <View style={styles.playerInfo}>
+            <View style={styles.playerAvatar}>
+              <FontAwesome name="user" size={20} color="#FFFFFF" />
+            </View>
+            <View style={styles.playerDetails}>
+              <ThemedText style={styles.playerName}>NAME</ThemedText>
+              <ThemedText style={styles.playerCode}>PLAYER CODE</ThemedText>
+            </View>
+          </View>
+          <View style={styles.playerStats}>
+            <View style={styles.points}>
+              <FontAwesome name="star" size={16} color="#dc2929" />
+              <ThemedText style={styles.statsText}>POINTS</ThemedText>
+            </View>
+            <View style={styles.region}>
+              <FontAwesome name="map-marker" size={16} color="#226cae" />
+              <ThemedText style={styles.statsText}>REGION</ThemedText>
+            </View>
+          </View>
       </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
+
+        {/* Main Content */}
+        <ThemedView style={styles.mainContent}>
+          {/* Center Logo */}
+          <View style={styles.centerLogoContainer}>
+            <Image
+              source={require('@/assets/images/R.png')}
+              style={styles.centerLogo}
+            />
+          </View>
+
+          {/* Features in Circle */}
+          <Animated.View 
+            style={[
+              styles.featuresContainer,
+              { transform: [{ rotate: rotation }] }
+            ]}
+          >
+            {/* Dotted Circle */}
+            <View style={styles.dottedCircle} />
+            
+            {/* Chat Feature - Top Left (315° or -45°) */}
+            <View style={[styles.feature, styles.chatFeature]}>
+              <TouchableOpacity style={styles.featureIconWrapper} onPress={handleChatPress}>
+                <Animated.View 
+                  style={[
+                    styles.featureIcon, 
+                    { backgroundColor: '#dc2929' },
+                    { transform: [{ rotate: Animated.multiply(rotationAnim, -1).interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['0deg', '360deg']
+                    }) }] }
+                  ]}
+                >
+                  <FontAwesome name="comments" size={28} color="#FFFFFF" />
+                </Animated.View>
+              </TouchableOpacity>
+              <Animated.View 
+                style={[
+                  styles.featureTextContainer,
+                  { transform: [{ rotate: Animated.multiply(rotationAnim, -1).interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0deg', '360deg']
+                  }) }] }
+                ]}
+              >
+                <ThemedText style={styles.featureText}>Chat in</ThemedText>
+                <ThemedText style={styles.featureText}>English</ThemedText>
+              </Animated.View>
+            </View>
+
+            {/* Call Feature - Top Right (45°) */}
+            <View style={[styles.feature, styles.callFeature]}>
+              <TouchableOpacity 
+                style={styles.featureIconWrapper}
+                onPress={() => navigation.navigate('CallScreen' as never)}
+              >
+                <Animated.View 
+                  style={[
+                    styles.featureIcon, 
+                    { backgroundColor: '#226cae' },
+                    { transform: [{ rotate: Animated.multiply(rotationAnim, -1).interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['0deg', '360deg']
+                    }) }] }
+                  ]}
+                >
+                  <FontAwesome name="mobile" size={28} color="#FFFFFF" style={{ transform: [{ scaleX: -1 }] }} />
+                </Animated.View>
+              </TouchableOpacity>
+              <Animated.View 
+                style={[
+                  styles.featureTextContainer,
+                  { transform: [{ rotate: Animated.multiply(rotationAnim, -1).interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0deg', '360deg']
+                  }) }] }
+                ]}
+              >
+                <ThemedText style={styles.featureText}>Call in</ThemedText>
+                <ThemedText style={styles.featureText}>English</ThemedText>
+              </Animated.View>
+            </View>
+
+            {/* Group Discussion Feature - Bottom Left (225°) */}
+            <View style={[styles.feature, styles.regionFeature]}>
+              <TouchableOpacity 
+                style={styles.featureIconWrapper}
+                onPress={() => navigation.navigate('GroupDiscussionScreen' as never)}
+              >
+                <Animated.View 
+                  style={[
+                    styles.featureIcon, 
+                    { backgroundColor: '#226cae' },
+                    { transform: [{ rotate: Animated.multiply(rotationAnim, -1).interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['0deg', '360deg']
+                    }) }] }
+                  ]}
+                >
+                  <FontAwesome name="users" size={28} color="#FFFFFF" />
+                </Animated.View>
+              </TouchableOpacity>
+              <Animated.View 
+                style={[
+                  styles.featureTextContainer,
+                  { transform: [{ rotate: Animated.multiply(rotationAnim, -1).interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0deg', '360deg']
+                  }) }] }
+                ]}
+              >
+                <ThemedText style={styles.featureText}>Group</ThemedText>
+                <ThemedText style={styles.featureText}>Discussion</ThemedText>
+              </Animated.View>
+            </View>
+
+            {/* Learn Feature - Bottom Right (135°) */}
+            <View style={[styles.feature, styles.learnFeature]}>
+              <TouchableOpacity 
+                style={styles.featureIconWrapper}
+                onPress={() => navigation.navigate('LearnScreen' as never)}
+              >
+                <Animated.View 
+                  style={[
+                    styles.featureIcon, 
+                    { backgroundColor: '#dc2929' },
+                    { transform: [{ rotate: Animated.multiply(rotationAnim, -1).interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['0deg', '360deg']
+                    }) }] }
+                  ]}
+                >
+                  <FontAwesome name="play" size={28} color="#FFFFFF" />
+                </Animated.View>
+              </TouchableOpacity>
+              <Animated.View 
+                style={[
+                  styles.featureTextContainer,
+                  { transform: [{ rotate: Animated.multiply(rotationAnim, -1).interpolate({
+                    inputRange: [0, 1],
+                    outputRange: ['0deg', '360deg']
+                  }) }] }
+                ]}
+              >
+                <ThemedText style={styles.featureText}>Learn</ThemedText>
+                <ThemedText style={styles.featureText}>English</ThemedText>
+              </Animated.View>
+            </View>
+          </Animated.View>
       </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
+
+        {/* Notification Card */}
+        <ThemedView style={styles.notificationCard}>
+          <View style={styles.notificationIcon}>
+            <FontAwesome name="bell" size={20} color="#FFFFFF" />
+          </View>
+          <View style={styles.notificationContent}>
+            <ThemedText style={styles.notificationTitle}>Daily Goal</ThemedText>
+            <ThemedText style={styles.notificationText}>Complete today's daily challenge to maintain your streak! 🔥</ThemedText>
+          </View>
+          <TouchableOpacity style={styles.notificationAction}>
+            <FontAwesome name="arrow-right" size={16} color="#FFFFFF" />
+          </TouchableOpacity>
       </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
+        <ThemedView style={styles.notificationCard}>
+          <View style={styles.notificationIcon}>
+            <FontAwesome name="bell" size={20} color="#FFFFFF" />
+          </View>
+          <View style={styles.notificationContent}>
+            <ThemedText style={styles.notificationTitle}>Daily Goal</ThemedText>
+            <ThemedText style={styles.notificationText}>Your position in the leaderboard is 87!</ThemedText>
+          </View>
+          <TouchableOpacity style={styles.notificationAction}>
+            <FontAwesome name="arrow-right" size={16} color="#FFFFFF" />
+          </TouchableOpacity>
       </ThemedView>
-    </ParallaxScrollView>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
+  container: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  gradientBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: -1,
+  },
+  scrollContent: {
+    flex: 1,
+    padding: 20,
+    paddingTop: 0,
+  },
+  playerCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 15,
+    padding: 15,
+    marginBottom: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  playerInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    marginBottom: 15,
   },
-  stepContainer: {
-    gap: 8,
+  playerAvatar: {
+    width: 40,
+    height: 40,
+    backgroundColor: '#dc2929',
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 15,
+  },
+  playerDetails: {
+    flex: 1,
+  },
+  playerName: {
+    fontWeight: '600',
+    color: '#333333',
+  },
+  playerCode: {
+    fontSize: 14,
+    color: '#666666',
+  },
+  playerStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  points: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  region: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statsText: {
+    marginLeft: 8,
+    color: '#666666',
+  },
+  mainContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 10,
+    height: 400,
+    position: 'relative',
+  },
+  centerLogoContainer: {
+    position: 'absolute',
+    top: 220,
+    left: '50%',
+    width: 120,
+    height: 120,
+    marginLeft: -60,
+    marginTop: -60,
+    zIndex: 2,
+  },
+  centerLogo: {
+    width: '100%',
+    height: '100%',
+    objectFit: 'contain',
+  },
+  featuresContainer: {
+    position: 'relative',
+    width: 320,
+    height: 320,
+    alignSelf: 'center',
+    marginTop: 40,
+  },
+  dottedCircle: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    width: 280,
+    height: 280,
+    borderRadius: 140,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: '#E0E0E0',
+  },
+  feature: {
+    position: 'absolute',
+    alignItems: 'center',
+    width: 100,
+  },
+  featureIconWrapper: {
     marginBottom: 8,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  featureIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  titleContainer: {
+    marginBottom: 24,
+    alignItems: 'flex-start',
+  },
+  titleText: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#333333',
+    marginBottom: 8,
+  },
+  titleUnderline: {
+    width: 60,
+    height: 3,
+    backgroundColor: '#dc2929',
+    borderRadius: 1.5,
+  },
+  featureTextContainer: {
+    alignItems: 'center',
+    minHeight: 40,
+    justifyContent: 'center',
+  },
+  featureText: {
+    color: '#666',
+    fontSize: 13,
+    fontWeight: '500',
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+  // Perfect circle positioning using trigonometry
+  // Radius: 140px from center, positioned at 45° intervals
+  chatFeature: {
+    // Top-left: 315° (-45°)
+    top: 20 + 140 - 140 * Math.cos(Math.PI / 4) - 30, // center - cos(45°) * radius - icon_height/2
+    left: 20 + 140 - 140 * Math.sin(Math.PI / 4) - 50, // center - sin(45°) * radius - icon_width/2
+  },
+  callFeature: {
+    // Top-right: 45°
+    top: 20 + 140 - 140 * Math.cos(Math.PI / 4) - 30,
+    left: 20 + 140 + 140 * Math.sin(Math.PI / 4) - 50,
+  },
+  regionFeature: {
+    // Bottom-left: 225°
+    top: 20 + 140 + 140 * Math.cos(Math.PI / 4) - 30,
+    left: 20 + 140 - 140 * Math.sin(Math.PI / 4) - 50,
+  },
+  learnFeature: {
+    // Bottom-right: 135°
+    top: 20 + 140 + 140 * Math.cos(Math.PI / 4) - 30,
+    left: 20 + 140 + 140 * Math.sin(Math.PI / 4) - 50,
+  },
+  notificationCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 15,
+    padding: 12,
+    marginVertical: 10,
+    marginHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+    marginBottom: 2,
+  },
+  notificationIcon: {
+    width: 40,
+    height: 40,
+    backgroundColor: '#dc2929',
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notificationContent: {
+    flex: 1,
+  },
+  notificationTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333333',
+    marginBottom: 4,
+  },
+  notificationText: {
+    fontSize: 14,
+    color: '#666666',
+  },
+  notificationAction: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#226cae',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
