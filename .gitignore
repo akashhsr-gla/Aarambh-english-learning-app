@@ -37,3 +37,7 @@ yarn-error.*
 *.tsbuildinfo
 
 app-example
+
+# Backend env
+BackEnd/.env
+BackEnd/env.local
