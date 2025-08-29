@@ -111,14 +111,20 @@ export default function DailyChallenges() {
         if (gamesData.length > 0) {
           // Select a random game for daily challenge
           const randomGame = gamesData[Math.floor(Math.random() * gamesData.length)];
-          const randomQuestion = randomGame.questions[Math.floor(Math.random() * randomGame.questions.length)];
           
-          setDailyChallenge({
-            game: randomGame,
-            question: randomQuestion,
-            gameType: randomGame.gameType
-          });
-          setError(null);
+          // Ensure the game has questions
+          if (randomGame.questions && randomGame.questions.length > 0) {
+            const randomQuestion = randomGame.questions[Math.floor(Math.random() * randomGame.questions.length)];
+            
+            setDailyChallenge({
+              game: randomGame,
+              question: randomQuestion,
+              gameType: randomGame.gameType
+            });
+            setError(null);
+          } else {
+            setError('Selected game has no questions available');
+          }
         } else {
           setError('No games available for daily challenge');
         }
@@ -183,7 +189,7 @@ export default function DailyChallenges() {
         
         <View style={styles.dailyChallengeContent}>
           <ThemedText style={styles.dailyChallengeQuestion}>
-            {question.questionText}
+            {question.questionText || question.question || "Daily challenge question"}
           </ThemedText>
           
           <View style={styles.dailyChallengeOptions}>
@@ -214,7 +220,7 @@ export default function DailyChallenges() {
             </View>
             <View style={styles.dailyChallengeStat}>
               <FontAwesome name="star" size={14} color="#FFD700" />
-              <ThemedText style={styles.dailyChallengeStatText}>{question.points} pts</ThemedText>
+              <ThemedText style={styles.dailyChallengeStatText}>{question.points || 10} pts</ThemedText>
             </View>
             <View style={styles.dailyChallengeStat}>
               <FontAwesome name="users" size={14} color="#226cae" />

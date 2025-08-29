@@ -1,5 +1,13 @@
 // Configure API base URL based on platform
 import { Platform } from 'react-native';
+// Lazy load AsyncStorage to avoid NativeModule null in web or if not linked yet
+let AsyncStorage = null;
+try {
+  // eslint-disable-next-line global-require
+  AsyncStorage = require('@react-native-async-storage/async-storage').default;
+} catch (e) {
+  AsyncStorage = null;
+}
 
 let API_BASE_URL;
 if (Platform.OS === 'android') {
@@ -42,19 +50,56 @@ const apiRequest = async (endpoint, options = {}) => {
   }
 };
 
-// Token management
+// Token management (cross-platform)
 const getStoredToken = async () => {
-  // In a real app, you'd use AsyncStorage or secure storage
-  // For now, we'll use a simple approach
-  return global.authToken || null;
+  try {
+    if (Platform.OS === 'web') {
+      return typeof window !== 'undefined' ? window.localStorage.getItem('authToken') : null;
+    }
+    if (AsyncStorage && AsyncStorage.getItem) {
+      return await AsyncStorage.getItem('authToken');
+    }
+    return global.authToken || null;
+  } catch (err) {
+    console.error('Error getting stored token:', err);
+    return null;
+  }
 };
 
-const setStoredToken = (token) => {
-  global.authToken = token;
+const setStoredToken = async (token) => {
+  try {
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem('authToken', token);
+      }
+    } else {
+      if (AsyncStorage && AsyncStorage.setItem) {
+        await AsyncStorage.setItem('authToken', token);
+      } else {
+        global.authToken = token;
+      }
+    }
+  } catch (err) {
+    console.error('Error setting stored token:', err);
+  }
 };
 
-const clearStoredToken = () => {
-  global.authToken = null;
+const clearStoredToken = async () => {
+  try {
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem('authToken');
+      }
+    } else {
+      if (AsyncStorage && AsyncStorage.removeItem) {
+        await AsyncStorage.removeItem('authToken');
+      } else {
+        global.authToken = null;
+      }
+    }
+  } catch (err) {
+    console.error('Error clearing stored token:', err);
+  }
 };
 
 // Auth API
@@ -67,7 +112,7 @@ export const authAPI = {
     });
     
     if (response.success && response.data.token) {
-      setStoredToken(response.data.token);
+      await setStoredToken(response.data.token);
     }
     
     return response;
@@ -81,7 +126,7 @@ export const authAPI = {
     });
     
     if (response.success && response.data.token) {
-      setStoredToken(response.data.token);
+      await setStoredToken(response.data.token);
     }
     
     return response;
@@ -94,13 +139,21 @@ export const authAPI = {
     } catch (error) {
       console.log('Logout error (continuing):', error);
     } finally {
-      clearStoredToken();
+      await clearStoredToken();
     }
   },
 
   // Get current user
   getCurrentUser: async () => {
     return await apiRequest('/auth/me');
+  },
+
+  // Update profile
+  updateProfile: async (userId, updateData) => {
+    return await apiRequest(`/users/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify(updateData),
+    });
   },
 
   // Change password
@@ -188,6 +241,18 @@ export const leaderboardAPI = {
 
 // Communication API
 export const communicationAPI = {
+  // Find partner for region-based matchmaking
+  findPartner: async (sessionType, preferredLanguageLevel = null) => {
+    const body = { sessionType };
+    if (preferredLanguageLevel) {
+      body.preferredLanguageLevel = preferredLanguageLevel;
+    }
+    return await apiRequest('/communication/matchmaking/find-partner', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  },
+
   // Initiate call
   initiateCall: async (callData) => {
     return await apiRequest('/communication/call/initiate', {

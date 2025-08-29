@@ -1,83 +1,249 @@
-import { StyleSheet, View, TextInput, FlatList, TouchableOpacity, KeyboardAvoidingView, Platform } from 'react-native';
-import { useState, useRef, useEffect } from 'react';
 import { FontAwesome } from '@expo/vector-icons';
-import { Image } from 'expo-image';
+import { useNavigation } from '@react-navigation/native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Platform, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 
-import { ThemedText } from '../components/ThemedText';
-import { ThemedView } from '../components/ThemedView';
-import Header from '../components/Header';
 import ChatButton from '../components/ChatButton';
+import Header from '../components/Header';
+import { ThemedText } from '../components/ThemedText';
+import { communicationAPI } from './services/api';
+
+interface Partner {
+  id: string;
+  name: string;
+  email: string;
+  profilePicture?: string;
+  languageLevel: string;
+  lastActive: string;
+}
+
+interface ChatSession {
+  id: string;
+  sessionId: string;
+  sessionType: string;
+  title: string;
+  status: string;
+}
 
 type Message = {
   id: string;
   text: string;
   sender: 'user' | 'other';
   timestamp: Date;
+  senderInfo?: {
+    id: string;
+    name: string;
+    email: string;
+  };
 };
 
 export default function ChatScreen() {
+  const navigation = useNavigation();
   const [message, setMessage] = useState('');
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      text: 'Hello! My name is Sarah. I\'m here to practice English with you. What\'s your name?',
-      sender: 'other',
-      timestamp: new Date(Date.now() - 60000),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [chatStatus, setChatStatus] = useState('finding'); // finding, active, ending, error
+  const [partner, setPartner] = useState<Partner | null>(null);
+  const [session, setSession] = useState<ChatSession | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   const flatListRef = useRef<FlatList>(null);
+  const messagePollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Auto-responses based on user messages
-  const autoResponses = [
-    { trigger: 'hi', response: 'Hi there! How are you doing today?' },
-    { trigger: 'hello', response: 'Hello! Nice to meet you. What would you like to talk about?' },
-    { trigger: 'name', response: 'My name is Sarah. I\'m an English language practice partner.' },
-    { trigger: 'weather', response: 'The weather is a great topic for conversation practice! Is it sunny, rainy, or cloudy where you are?' },
-    { trigger: 'hobby', response: 'Hobbies are interesting to discuss! I enjoy reading, hiking, and learning new languages. What about you?' },
-    { trigger: 'food', response: 'Food is one of my favorite topics! What kind of cuisine do you enjoy the most?' },
-    { trigger: 'movie', response: 'Movies are great for language learning! Have you watched any good films recently?' },
-    { trigger: 'music', response: 'Music is universal! What kind of music do you listen to?' },
-    { trigger: 'travel', response: 'Traveling is a wonderful experience! Have you visited any interesting places?' },
-    { trigger: 'learn', response: 'Learning English takes practice. What aspects are you finding most challenging?' },
-  ];
-
-  const sendMessage = () => {
-    if (message.trim() === '') return;
-
-    // Add user message
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      text: message,
-      sender: 'user',
-      timestamp: new Date(),
-    };
+  // Find partner and start chat on mount
+  useEffect(() => {
+    findPartnerAndStartChat();
     
-    setMessages(prevMessages => [...prevMessages, userMessage]);
-    setMessage('');
-
-    // Simulate typing delay before response
-    setTimeout(() => {
-      // Check for matching auto-response
-      let responseText = 'That\'s interesting! Could you tell me more about it?';
-      
-      for (const item of autoResponses) {
-        if (message.toLowerCase().includes(item.trigger)) {
-          responseText = item.response;
-          break;
-        }
+    return () => {
+      // Cleanup polling
+      if (messagePollingRef.current) {
+        clearInterval(messagePollingRef.current);
       }
-
-      const botResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        text: responseText,
-        sender: 'other',
-        timestamp: new Date(),
-      };
+    };
+  }, []);
+  
+  // Start polling for messages when chat becomes active
+  useEffect(() => {
+    if (chatStatus === 'active' && session?.id) {
+      loadMessages();
+      startMessagePolling();
+    } else {
+      stopMessagePolling();
+    }
+    
+    return () => {
+      stopMessagePolling();
+    };
+  }, [chatStatus, session]);
+  
+  const findPartnerAndStartChat = async () => {
+    try {
+      setChatStatus('finding');
+      setError(null);
       
-      setMessages(prevMessages => [...prevMessages, botResponse]);
-    }, 1000);
+      // Find a partner (this also creates the chat session)
+      const partnerResponse = await communicationAPI.findPartner('chat');
+      
+      if (!partnerResponse.success) {
+        throw new Error(partnerResponse.message || 'Failed to find chat partner');
+      }
+      
+      if (!partnerResponse.data.partner) {
+        setError('No available partners found in your region. Please try again later.');
+        setChatStatus('error');
+        return;
+      }
+      
+      setPartner(partnerResponse.data.partner);
+      setSession(partnerResponse.data.session);
+      setChatStatus('active');
+      
+    } catch (error: any) {
+      console.error('Chat initiation error:', error);
+      setError(error.message || 'Failed to start chat');
+      setChatStatus('error');
+    }
   };
+  
+  const loadMessages = async () => {
+    if (!session?.id) return;
+    
+    try {
+      const messagesResponse = await communicationAPI.getMessages(session.id);
+      
+      if (messagesResponse.success && messagesResponse.data.messages) {
+        const formattedMessages = messagesResponse.data.messages.map((msg: any) => ({
+          id: msg.id,
+          text: msg.message,
+          sender: msg.sender.id === partner?.id ? 'other' : 'user',
+          timestamp: new Date(msg.timestamp),
+          senderInfo: msg.sender
+        }));
+        
+        setMessages(formattedMessages);
+      }
+    } catch (error) {
+      console.error('Load messages error:', error);
+    }
+  };
+  
+  const startMessagePolling = () => {
+    if (messagePollingRef.current) return;
+    
+    messagePollingRef.current = setInterval(() => {
+      loadMessages();
+    }, 2000); // Poll every 2 seconds
+  };
+  
+  const stopMessagePolling = () => {
+    if (messagePollingRef.current) {
+      clearInterval(messagePollingRef.current);
+      messagePollingRef.current = null;
+    }
+  };
+
+  const sendMessage = async () => {
+    if (message.trim() === '' || !session?.id || chatStatus !== 'active') return;
+
+    const messageText = message.trim();
+    setMessage('');
+    setLoading(true);
+
+    try {
+      const response = await communicationAPI.sendMessage(session.id, {
+        message: messageText,
+        messageType: 'text'
+      });
+      
+      if (response.success) {
+        // Add message to local state immediately for better UX
+        const userMessage: Message = {
+          id: response.data.message.id,
+          text: messageText,
+          sender: 'user',
+          timestamp: new Date(response.data.message.timestamp),
+          senderInfo: response.data.message.sender
+        };
+        
+        setMessages(prevMessages => [...prevMessages, userMessage]);
+      } else {
+        throw new Error(response.message || 'Failed to send message');
+      }
+    } catch (error) {
+      console.error('Send message error:', error);
+      Alert.alert('Error', 'Failed to send message. Please try again.');
+      setMessage(messageText); // Restore message on error
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleCallPress = (callType: 'voice' | 'video') => {
+    (navigation as any).navigate('CallScreen', { callType });
+  };
+  
+  const retryFindPartner = () => {
+    findPartnerAndStartChat();
+  };
+  
+  // Show error state
+  if (chatStatus === 'error') {
+    return (
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.container}
+      >
+        <View style={styles.gradientBackground} />
+        <Header title="Chat in English" />
+        
+        <View style={styles.errorContainer}>
+          <FontAwesome name="exclamation-triangle" size={60} color="#dc2929" />
+          <ThemedText style={styles.errorTitle}>Connection Failed</ThemedText>
+          <ThemedText style={styles.errorMessage}>{error}</ThemedText>
+          
+          <TouchableOpacity style={styles.retryButton} onPress={retryFindPartner}>
+            <ThemedText style={styles.retryButtonText}>Try Again</ThemedText>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.cancelButton} onPress={() => navigation.goBack()}>
+            <ThemedText style={styles.cancelButtonText}>Go Back</ThemedText>
+          </TouchableOpacity>
+        </View>
+        
+        <ChatButton expandable={true} navigateOnClick={false} />
+      </KeyboardAvoidingView>
+    );
+  }
+  
+  // Show loading state
+  if (chatStatus === 'finding') {
+    return (
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.container}
+      >
+        <View style={styles.gradientBackground} />
+        <Header title="Chat in English" />
+        
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#226cae" />
+          <ThemedText style={styles.loadingText}>Finding a chat partner in your region...</ThemedText>
+          {partner && (
+            <View style={styles.partnerInfo}>
+              <ThemedText style={styles.partnerText}>Found: {partner.name}</ThemedText>
+              <ThemedText style={styles.partnerLevel}>Level: {partner.languageLevel}</ThemedText>
+            </View>
+          )}
+          
+          <TouchableOpacity style={styles.cancelButton} onPress={() => navigation.goBack()}>
+            <ThemedText style={styles.cancelButtonText}>Cancel</ThemedText>
+          </TouchableOpacity>
+        </View>
+        
+        <ChatButton expandable={true} navigateOnClick={false} />
+      </KeyboardAvoidingView>
+    );
+  }
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -130,7 +296,7 @@ export default function ChatScreen() {
               <FontAwesome name="user" size={20} color="#FFFFFF" />
             </View>
             <View>
-              <ThemedText style={styles.chatPartnerName}>Sarah</ThemedText>
+              <ThemedText style={styles.chatPartnerName}>{partner?.name || 'Partner'}</ThemedText>
               <View style={styles.onlineStatus}>
                 <View style={styles.onlineDot} />
                 <ThemedText style={styles.onlineText}>Online</ThemedText>
@@ -139,10 +305,10 @@ export default function ChatScreen() {
           </View>
           
           <View style={styles.chatActions}>
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity style={styles.actionButton} onPress={() => handleCallPress('voice')}>
               <FontAwesome name="phone" size={18} color="#226cae" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton}>
+            <TouchableOpacity style={styles.actionButton} onPress={() => handleCallPress('video')}>
               <FontAwesome name="video-camera" size={18} color="#226cae" />
             </TouchableOpacity>
           </View>
@@ -171,11 +337,15 @@ export default function ChatScreen() {
           />
           
           <TouchableOpacity 
-            style={[styles.sendButton, !message.trim() && styles.sendButtonDisabled]} 
+            style={[styles.sendButton, (!message.trim() || loading) && styles.sendButtonDisabled]} 
             onPress={sendMessage}
-            disabled={!message.trim()}
+            disabled={!message.trim() || loading || chatStatus !== 'active'}
           >
-            <FontAwesome name="paper-plane" size={20} color="#FFFFFF" />
+            {loading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <FontAwesome name="paper-plane" size={20} color="#FFFFFF" />
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -350,5 +520,75 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: '#CCCCCC',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  errorTitle: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: '#333333',
+    marginTop: 20,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  errorMessage: {
+    fontSize: 16,
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 30,
+    lineHeight: 22,
+  },
+  retryButton: {
+    backgroundColor: '#226cae',
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    borderRadius: 25,
+    marginBottom: 15,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  cancelButton: {
+    backgroundColor: 'transparent',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+  },
+  cancelButtonText: {
+    color: '#666666',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  loadingText: {
+    fontSize: 18,
+    color: '#333333',
+    marginTop: 20,
+    textAlign: 'center',
+  },
+  partnerInfo: {
+    marginTop: 30,
+    alignItems: 'center',
+  },
+  partnerText: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: '#333333',
+    marginBottom: 5,
+  },
+  partnerLevel: {
+    fontSize: 14,
+    color: '#666666',
   },
 }); 

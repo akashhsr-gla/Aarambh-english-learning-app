@@ -6,13 +6,9 @@ import { Alert, Animated, Dimensions, Keyboard, StyleSheet, TextInput, Touchable
 
 import GameHeader from '../components/GameHeader';
 import { ThemedText } from '../components/ThemedText';
+import { gamesAPI } from './services/api';
 
 const { width } = Dimensions.get('window');
-
-// Define filter types
-type FilterType = 'all' | 'exams' | 'profession';
-type ExamType = 'all' | 'nda' | 'ssc' | 'banking' | 'upsc' | 'cat';
-type ProfessionType = 'all' | 'engineering' | 'medical' | 'teaching' | 'business' | 'student';
 
 // Define the type for identification items
 type IdentificationItem = {
@@ -24,176 +20,17 @@ type IdentificationItem = {
   difficulty: string;
 };
 
-// Sample identification data with categories
-const identificationData: IdentificationItem[] = [
-  // Animals
-  {
-    id: 1,
-    name: "dog",
-    icon: "paw",
-    category: "Animals",
-    hint: "Man's best friend",
-    difficulty: "Easy"
-  },
-  {
-    id: 2,
-    name: "cat",
-    icon: "paw",
-    category: "Animals",
-    hint: "Purrs when happy",
-    difficulty: "Easy"
-  },
-  {
-    id: 3,
-    name: "horse",
-    icon: "paw",
-    category: "Animals",
-    hint: "Used for riding",
-    difficulty: "Easy"
-  },
-  // Food
-  {
-    id: 4,
-    name: "pizza",
-    icon: "cutlery",
-    category: "Food",
-    hint: "Italian dish with cheese and toppings",
-    difficulty: "Easy"
-  },
-  {
-    id: 5,
-    name: "apple",
-    icon: "apple",
-    category: "Food",
-    hint: "Keeps the doctor away",
-    difficulty: "Easy"
-  },
-  {
-    id: 6,
-    name: "coffee",
-    icon: "coffee",
-    category: "Food",
-    hint: "Morning beverage with caffeine",
-    difficulty: "Easy"
-  },
-  // Transportation
-  {
-    id: 7,
-    name: "car",
-    icon: "car",
-    category: "Transportation",
-    hint: "Four wheels and an engine",
-    difficulty: "Easy"
-  },
-  {
-    id: 8,
-    name: "bicycle",
-    icon: "bicycle",
-    category: "Transportation",
-    hint: "Two wheels, no engine",
-    difficulty: "Easy"
-  },
-  {
-    id: 9,
-    name: "plane",
-    icon: "plane",
-    category: "Transportation",
-    hint: "Flies in the sky",
-    difficulty: "Easy"
-  },
-  // Activities
-  {
-    id: 10,
-    name: "running",
-    icon: "rocket",
-    category: "Activities",
-    hint: "Fast movement on foot",
-    difficulty: "Medium"
-  },
-  {
-    id: 11,
-    name: "swimming",
-    icon: "life-ring",
-    category: "Activities",
-    hint: "Moving through water",
-    difficulty: "Medium"
-  },
-  {
-    id: 12,
-    name: "reading",
-    icon: "book",
-    category: "Activities",
-    hint: "Looking at pages with text",
-    difficulty: "Medium"
-  },
-  // Places
-  {
-    id: 13,
-    name: "home",
-    icon: "home",
-    category: "Places",
-    hint: "Where you live",
-    difficulty: "Easy"
-  },
-  {
-    id: 14,
-    name: "school",
-    icon: "graduation-cap",
-    category: "Places",
-    hint: "Where you learn",
-    difficulty: "Easy"
-  },
-  {
-    id: 15,
-    name: "hospital",
-    icon: "hospital-o",
-    category: "Places",
-    hint: "Where doctors work",
-    difficulty: "Easy"
-  },
-  // Weather
-  {
-    id: 16,
-    name: "rain",
-    icon: "tint",
-    category: "Weather",
-    hint: "Water falling from clouds",
-    difficulty: "Medium"
-  },
-  {
-    id: 17,
-    name: "snow",
-    icon: "snowflake-o",
-    category: "Weather",
-    hint: "Cold white precipitation",
-    difficulty: "Medium"
-  },
-  {
-    id: 18,
-    name: "sun",
-    icon: "sun-o",
-    category: "Weather",
-    hint: "Bright star in our solar system",
-    difficulty: "Easy"
-  },
-  // Technology
-  {
-    id: 19,
-    name: "computer",
-    icon: "laptop",
-    category: "Technology",
-    hint: "Electronic device for work",
-    difficulty: "Medium"
-  },
-  {
-    id: 20,
-    name: "phone",
-    icon: "mobile",
-    category: "Technology",
-    hint: "Portable communication device",
-    difficulty: "Easy"
-  }
-];
+// Define backend game question interface
+interface GameQuestion {
+  _id: string;
+  question: string;
+  options: Array<{
+    text: string;
+    isCorrect: boolean;
+  }>;
+  hint?: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+}
 
 export default function IdentificationGame() {
   const navigation = useNavigation();
@@ -207,14 +44,10 @@ export default function IdentificationGame() {
   const [showHint, setShowHint] = useState(false);
   const [hintUsed, setHintUsed] = useState(false);
   const [streak, setStreak] = useState(0);
-  const [totalItems, setTotalItems] = useState(10); // Number of items per game
-  const [gameItems, setGameItems] = useState<typeof identificationData>([]);
-  
-  // Filter states
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [filterType, setFilterType] = useState<FilterType>('all');
-  const [selectedExam, setSelectedExam] = useState<ExamType>('all');
-  const [selectedProfession, setSelectedProfession] = useState<ProfessionType>('all');
+  const [totalItems, setTotalItems] = useState(10);
+  const [gameItems, setGameItems] = useState<IdentificationItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
   // Animation values
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -222,17 +55,85 @@ export default function IdentificationGame() {
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const inputRef = useRef<TextInput>(null);
   
-  // Initialize game with random items
+  // Function to convert backend game questions to identification items
+  const convertGameQuestionToItem = (question: any, index: number): IdentificationItem => {
+    // Find the correct answer
+    const correctOption = question.options.find((option: any) => option.isCorrect);
+    const correctAnswer = correctOption ? correctOption.text.toLowerCase() : '';
+    
+    return {
+      id: index + 1,
+      name: correctAnswer,
+      icon: 'question' as React.ComponentProps<typeof FontAwesome>['name'],
+      category: 'General',
+      hint: question.questionText || question.hint || 'Look carefully at the image',
+      difficulty: question.difficulty ? question.difficulty.charAt(0).toUpperCase() + question.difficulty.slice(1) : 'Easy'
+    };
+  };
+  
+  // Initialize game with API data
   useEffect(() => {
-    const shuffled = [...identificationData].sort(() => 0.5 - Math.random());
-    setGameItems(shuffled.slice(0, totalItems));
+    const fetchGameData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        const response = await gamesAPI.getGamesByType('identification');
+        
+        if (response.success && response.data) {
+          let games: any[] = [];
+          
+          // Handle different response structures
+          if (Array.isArray(response.data.games)) {
+            games = response.data.games;
+          } else if (Array.isArray(response.data)) {
+            games = response.data;
+          }
+          
+          if (games.length > 0) {
+            // Get questions from the first game
+            const game = games[0];
+            if (game.questions && Array.isArray(game.questions)) {
+              // Convert backend questions to identification items
+              const identificationItems = game.questions.map((question: any, index: number) => 
+                convertGameQuestionToItem(question, index)
+              );
+              
+              // Shuffle and take random items
+              const shuffled = [...identificationItems].sort(() => 0.5 - Math.random());
+              setGameItems(shuffled.slice(0, Math.min(totalItems, shuffled.length)));
+            } else {
+              setError('No questions available in this game');
+            }
+          } else {
+            setError('No identification games available');
+          }
+        } else {
+          setError('Failed to load games');
+        }
+      } catch (err) {
+        console.error('Error fetching identification games:', err);
+        setError('Network error. Please check your connection.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchGameData();
   }, []);
 
-  const currentItem = gameItems[currentItemIndex] || identificationData[0];
+  const currentItem = gameItems[currentItemIndex] || {
+    id: 1,
+    name: '',
+    icon: 'question' as React.ComponentProps<typeof FontAwesome>['name'],
+    category: 'General',
+    hint: 'Loading...',
+    difficulty: 'Easy'
+  };
 
   // Timer countdown
   useEffect(() => {
-    if (showResult || gameOver || gameItems.length === 0) return;
+    if (showResult || gameOver || gameItems.length === 0 || loading) return;
     
     const timer = setInterval(() => {
       setTimeLeft((prev) => {
@@ -244,129 +145,64 @@ export default function IdentificationGame() {
         return prev - 1;
       });
     }, 1000);
-    
-    return () => clearInterval(timer);
-  }, [currentItemIndex, showResult, gameOver, gameItems]);
 
-  // Reset animations when item changes
-  useEffect(() => {
-    if (gameItems.length > 0 && currentItem) {
-      setAnswer("");
-      setShowResult(false);
-      setShowHint(false);
-      setHintUsed(false);
-      setTimeLeft(20);
-      
-      // Reset animations
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(scaleAnim, {
-          toValue: 1,
-          duration: 500,
-          useNativeDriver: true,
-        })
-      ]).start();
-      
-      // Focus on input
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 100);
-    }
-  }, [currentItemIndex, gameItems]);
+    return () => clearInterval(timer);
+  }, [showResult, gameOver, currentItemIndex, gameItems.length, loading]);
 
   const handleTimeout = () => {
     setShowResult(true);
     setIsCorrect(false);
     setStreak(0);
     
-    // Shake animation for timeout
-    Animated.sequence([
-      Animated.timing(slideAnim, { toValue: 10, duration: 100, useNativeDriver: true }),
-      Animated.timing(slideAnim, { toValue: -10, duration: 100, useNativeDriver: true }),
-      Animated.timing(slideAnim, { toValue: 10, duration: 100, useNativeDriver: true }),
-      Animated.timing(slideAnim, { toValue: 0, duration: 100, useNativeDriver: true })
-    ]).start();
+    setTimeout(() => {
+      nextQuestion();
+    }, 2000);
   };
 
-  const checkAnswer = () => {
-    if (showResult) return;
-    
-    Keyboard.dismiss();
-    const userAnswer = answer.trim().toLowerCase();
-    const correctAnswer = currentItem.name.toLowerCase();
-    
-    const isAnswerCorrect = userAnswer === correctAnswer;
-    setIsCorrect(isAnswerCorrect);
-    setShowResult(true);
-    
-    if (isAnswerCorrect) {
-      // Calculate points (less points if hint was used)
-      const points = hintUsed ? 5 : 10;
-      setScore(score + points);
-      setStreak(streak + 1);
-      
-      // Success animation
-      Animated.sequence([
-        Animated.timing(scaleAnim, {
-          toValue: 1.1,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(scaleAnim, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        })
-      ]).start();
-    } else {
-      setStreak(0);
-      
-      // Error animation
-      Animated.sequence([
-        Animated.timing(slideAnim, { toValue: 10, duration: 100, useNativeDriver: true }),
-        Animated.timing(slideAnim, { toValue: -10, duration: 100, useNativeDriver: true }),
-        Animated.timing(slideAnim, { toValue: 0, duration: 100, useNativeDriver: true })
-      ]).start();
-    }
-  };
-
-  const moveToNextItem = () => {
+  const nextQuestion = () => {
     if (currentItemIndex < gameItems.length - 1) {
-      // Slide out animation
-      Animated.timing(slideAnim, {
-        toValue: -width,
-        duration: 300,
-        useNativeDriver: true,
-      }).start(() => {
-        setCurrentItemIndex(currentItemIndex + 1);
-      });
+      setCurrentItemIndex(prev => prev + 1);
+      setAnswer("");
+      setShowResult(false);
+      setTimeLeft(20);
+      setShowHint(false);
+      setHintUsed(false);
+      inputRef.current?.focus();
     } else {
       setGameOver(true);
-      
-      // Show final score
-      Alert.alert(
-        "Game Completed!",
-        `Your final score: ${score} out of ${gameItems.length * 10}`,
-        [
-          { text: "Play Again", onPress: resetGame },
-          { text: "Back to Explore", onPress: () => navigation.goBack() }
-        ]
-      );
     }
   };
 
-  const resetGame = () => {
-    const shuffled = [...identificationData].sort(() => 0.5 - Math.random());
-    setGameItems(shuffled.slice(0, totalItems));
+  const handleAnswer = () => {
+    Keyboard.dismiss();
+    
+    if (!answer.trim()) {
+      Alert.alert('Please enter an answer');
+      return;
+    }
+
+    const userAnswer = answer.toLowerCase().trim();
+    const correctAnswer = currentItem.name.toLowerCase();
+    const correct = userAnswer === correctAnswer;
+    
+    setIsCorrect(correct);
+    setShowResult(true);
+    
+    if (correct) {
+      const points = hintUsed ? 5 : 10; // Less points if hint was used
+      setScore(prev => prev + points);
+      setStreak(prev => prev + 1);
+    } else {
+      setStreak(0);
+    }
+
+    setTimeout(() => {
+      nextQuestion();
+    }, 2000);
+  };
+
+  const resetGame = async () => {
+    // Reset states first
     setCurrentItemIndex(0);
     setScore(0);
     setStreak(0);
@@ -376,25 +212,142 @@ export default function IdentificationGame() {
     setAnswer("");
     setShowHint(false);
     setHintUsed(false);
+    
+    // Fetch fresh data from API
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await gamesAPI.getGamesByType('identification');
+      
+      if (response.success && response.data) {
+        let games: any[] = [];
+        
+        // Handle different response structures
+        if (Array.isArray(response.data.games)) {
+          games = response.data.games;
+        } else if (Array.isArray(response.data)) {
+          games = response.data;
+        }
+        
+        if (games.length > 0) {
+          // Get questions from the first game
+          const game = games[0];
+          if (game.questions && Array.isArray(game.questions)) {
+            // Convert backend questions to identification items
+            const identificationItems = game.questions.map((question: any, index: number) => 
+              convertGameQuestionToItem(question, index)
+            );
+            
+            // Shuffle and take random items
+            const shuffled = [...identificationItems].sort(() => 0.5 - Math.random());
+            setGameItems(shuffled.slice(0, Math.min(totalItems, shuffled.length)));
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error resetting game:', err);
+      setError('Failed to reset game');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const toggleHint = () => {
     if (!showHint && !showResult) {
       setShowHint(true);
       setHintUsed(true);
-    } else {
-      setShowHint(false);
     }
   };
 
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty.toLowerCase()) {
-      case 'easy': return '#4CAF50';
-      case 'medium': return '#FFC107';
-      case 'hard': return '#F44336';
-      default: return '#4CAF50';
-    }
+  const endGame = () => {
+    Alert.alert(
+      "End Game",
+      "Are you sure you want to end the current game?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "End Game", style: "destructive", onPress: () => navigation.goBack() }
+      ]
+    );
   };
+
+  // Loading state
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <LinearGradient
+          colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.gradientBackground}
+        />
+        <GameHeader title="Identification Game" showBackButton onBackPress={() => navigation.goBack()} />
+        <View style={styles.loadingContainer}>
+          <FontAwesome name="spinner" size={50} color="#dc2929" />
+          <ThemedText style={styles.loadingText}>Loading identification games...</ThemedText>
+        </View>
+      </View>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <LinearGradient
+          colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.gradientBackground}
+        />
+        <GameHeader title="Identification Game" showBackButton onBackPress={() => navigation.goBack()} />
+        <View style={styles.errorContainer}>
+          <FontAwesome name="exclamation-triangle" size={50} color="#dc2929" />
+          <ThemedText style={styles.errorText}>{error}</ThemedText>
+          <TouchableOpacity style={styles.retryButton} onPress={resetGame}>
+            <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // Game over screen
+  if (gameOver) {
+    return (
+      <View style={styles.container}>
+        <LinearGradient
+          colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.gradientBackground}
+        />
+        
+        <GameHeader title="Game Complete!" showBackButton onBackPress={() => navigation.goBack()} />
+        
+        <View style={styles.gameOverContainer}>
+          <FontAwesome name="trophy" size={80} color="#FFA500" />
+          <ThemedText style={styles.gameOverTitle}>Great Job!</ThemedText>
+          <ThemedText style={styles.finalScore}>Final Score: {score}</ThemedText>
+          <ThemedText style={styles.gameOverMessage}>
+            You completed {gameItems.length} identification challenges!
+          </ThemedText>
+          
+          <View style={styles.gameOverButtons}>
+            <TouchableOpacity style={styles.playAgainButton} onPress={resetGame}>
+              <FontAwesome name="refresh" size={20} color="#FFFFFF" />
+              <ThemedText style={styles.playAgainText}>Play Again</ThemedText>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+              <FontAwesome name="home" size={20} color="#666666" />
+              <ThemedText style={styles.backText}>Back to Games</ThemedText>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -407,206 +360,158 @@ export default function IdentificationGame() {
       
       <GameHeader title="Identification Game" showBackButton onBackPress={() => navigation.goBack()} />
       
-      {/* Filter Section */}
-      <View style={styles.filterContainer}>
-        <TouchableOpacity 
-          style={styles.filterButton}
-          onPress={() => setFilterOpen(!filterOpen)}
-        >
-          <FontAwesome name="filter" size={16} color="#226cae" />
-          <ThemedText style={styles.filterButtonText}>
-            {filterType === 'all' ? 'Filter' : 
-             filterType === 'exams' ? `Exam: ${selectedExam}` : 
-             `Profession: ${selectedProfession}`}
-          </ThemedText>
-          <FontAwesome name={filterOpen ? "chevron-up" : "chevron-down"} size={14} color="#666666" />
-        </TouchableOpacity>
-        
-        {filterOpen && (
-          <View style={styles.filterDropdown}>
-            <View style={styles.filterTabs}>
-              <TouchableOpacity 
-                style={[styles.filterTab, filterType === 'all' && styles.activeFilterTab]}
-                onPress={() => setFilterType('all')}
-              >
-                <ThemedText style={[styles.filterTabText, filterType === 'all' && styles.activeFilterTabText]}>
-                  All
-                </ThemedText>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.filterTab, filterType === 'exams' && styles.activeFilterTab]}
-                onPress={() => setFilterType('exams')}
-              >
-                <ThemedText style={[styles.filterTabText, filterType === 'exams' && styles.activeFilterTabText]}>
-                  Exams
-                </ThemedText>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.filterTab, filterType === 'profession' && styles.activeFilterTab]}
-                onPress={() => setFilterType('profession')}
-              >
-                <ThemedText style={[styles.filterTabText, filterType === 'profession' && styles.activeFilterTabText]}>
-                  Profession
-                </ThemedText>
-              </TouchableOpacity>
-            </View>
-            
-            {filterType === 'exams' && (
-              <View style={styles.filterOptions}>
-                {['all', 'nda', 'ssc', 'banking', 'upsc', 'cat'].map((exam) => (
-                  <TouchableOpacity 
-                    key={exam}
-                    style={[styles.filterOption, selectedExam === exam && styles.selectedFilterOption]}
-                    onPress={() => {
-                      setSelectedExam(exam as ExamType);
-                      setFilterOpen(false);
-                    }}
-                  >
-                    <ThemedText style={[styles.filterOptionText, selectedExam === exam && styles.selectedFilterOptionText]}>
-                      {exam.toUpperCase()}
-                    </ThemedText>
-                    {selectedExam === exam && (
-                      <FontAwesome name="check" size={14} color="#226cae" />
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-            
-            {filterType === 'profession' && (
-              <View style={styles.filterOptions}>
-                {['all', 'engineering', 'medical', 'teaching', 'business', 'student'].map((profession) => (
-                  <TouchableOpacity 
-                    key={profession}
-                    style={[styles.filterOption, selectedProfession === profession && styles.selectedFilterOption]}
-                    onPress={() => {
-                      setSelectedProfession(profession as ProfessionType);
-                      setFilterOpen(false);
-                    }}
-                  >
-                    <ThemedText style={[styles.filterOptionText, selectedProfession === profession && styles.selectedFilterOptionText]}>
-                      {profession.charAt(0).toUpperCase() + profession.slice(1)}
-                    </ThemedText>
-                    {selectedProfession === profession && (
-                      <FontAwesome name="check" size={14} color="#226cae" />
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-          </View>
-        )}
-      </View>
-      
+      {/* Score and Progress */}
       <View style={styles.scoreContainer}>
         <View style={styles.scoreItem}>
-          <FontAwesome name="star" size={18} color="#FFD700" />
-          <ThemedText style={styles.scoreText}>Score: {score}</ThemedText>
+          <FontAwesome name="star" size={16} color="#FFA500" />
+          <ThemedText style={styles.scoreText}>{score}</ThemedText>
         </View>
+        
         <View style={styles.scoreItem}>
-          <FontAwesome name="clock-o" size={18} color={timeLeft < 10 ? "#dc2929" : "#226cae"} />
-          <ThemedText style={[styles.scoreText, timeLeft < 10 && styles.urgentTime]}>
+          <FontAwesome name="fire" size={16} color="#FF4500" />
+          <ThemedText style={styles.scoreText}>{streak}</ThemedText>
+        </View>
+        
+        <View style={styles.scoreItem}>
+          <FontAwesome name="clock-o" size={16} color="#2196F3" />
+          <ThemedText style={[styles.scoreText, { color: timeLeft <= 5 ? '#F44336' : '#333333' }]}>
             {timeLeft}s
           </ThemedText>
         </View>
+        
         <View style={styles.scoreItem}>
-          <FontAwesome name="bolt" size={18} color="#dc2929" />
-          <ThemedText style={styles.scoreText}>Streak: {streak}</ThemedText>
+          <FontAwesome name="list-ol" size={16} color="#666666" />
+          <ThemedText style={styles.scoreText}>{currentItemIndex + 1}/{gameItems.length}</ThemedText>
         </View>
       </View>
-      
-      {gameItems.length > 0 && (
-        <Animated.View 
-          style={[
-            styles.gameContent,
-            {
-              opacity: fadeAnim,
-              transform: [
-                { translateX: slideAnim },
-                { scale: scaleAnim }
-              ]
-            }
-          ]}
-        >
-          <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { width: `${((currentItemIndex + 1) / gameItems.length) * 100}%` }]} />
-          </View>
-          
+
+      {/* Progress Bar */}
+      <View style={styles.progressContainer}>
+        <View style={styles.progressBar}>
+          <View 
+            style={[
+              styles.progressFill, 
+              { width: `${((currentItemIndex + 1) / gameItems.length) * 100}%` }
+            ]} 
+          />
+        </View>
+      </View>
+
+      {/* Game Content */}
+      <Animated.View 
+        style={[
+          styles.gameContent,
+          {
+            opacity: fadeAnim,
+            transform: [
+              { scale: scaleAnim },
+              { translateY: slideAnim }
+            ]
+          }
+        ]}
+      >
+        {/* Category and Difficulty */}
+        <View style={styles.infoContainer}>
           <View style={styles.categoryBadge}>
             <ThemedText style={styles.categoryText}>{currentItem.category}</ThemedText>
           </View>
-          
-          <View style={styles.difficultyBadge}>
-            <View style={[styles.difficultyIndicator, { backgroundColor: getDifficultyColor(currentItem.difficulty) }]} />
+          <View style={[styles.difficultyBadge, { backgroundColor: getDifficultyColor(currentItem.difficulty) }]}>
             <ThemedText style={styles.difficultyText}>{currentItem.difficulty}</ThemedText>
           </View>
-          
-          <View style={styles.iconContainer}>
-            <FontAwesome name={currentItem.icon} size={120} color="#226cae" />
-          </View>
-          
-          <View style={styles.inputContainer}>
-            <TextInput
-              ref={inputRef}
-              style={styles.input}
-              placeholder="Type the name of this object..."
-              value={answer}
-              onChangeText={setAnswer}
-              onSubmitEditing={checkAnswer}
-              editable={!showResult}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <TouchableOpacity 
-              style={[styles.submitButton, showResult && styles.disabledButton]} 
-              onPress={checkAnswer}
-              disabled={showResult}
-            >
-              <FontAwesome name="check" size={20} color="#FFFFFF" />
+        </View>
+
+        {/* Icon Display */}
+        <View style={styles.iconContainer}>
+          <FontAwesome name={currentItem.icon} size={120} color="#dc2929" />
+        </View>
+
+        {/* Question */}
+        <ThemedText style={styles.questionText}>What is this?</ThemedText>
+
+        {/* Hint */}
+        {showHint && (
+          <Animated.View style={styles.hintContainer}>
+            <FontAwesome name="lightbulb-o" size={20} color="#FFA500" />
+            <ThemedText style={styles.hintText}>{currentItem.hint}</ThemedText>
+          </Animated.View>
+        )}
+
+        {/* Answer Input */}
+        <View style={styles.inputContainer}>
+          <TextInput
+            ref={inputRef}
+            style={styles.answerInput}
+            value={answer}
+            onChangeText={setAnswer}
+            placeholder="Type your answer..."
+            placeholderTextColor="#999999"
+            autoCapitalize="none"
+            autoCorrect={false}
+            autoFocus={true}
+            onSubmitEditing={handleAnswer}
+            editable={!showResult}
+          />
+        </View>
+
+        {/* Action Buttons */}
+        <View style={styles.actionButtons}>
+          {!showHint && !showResult && (
+            <TouchableOpacity style={styles.hintButton} onPress={toggleHint}>
+              <FontAwesome name="lightbulb-o" size={20} color="#FFA500" />
+              <ThemedText style={styles.hintButtonText}>Hint</ThemedText>
             </TouchableOpacity>
-          </View>
+          )}
           
           <TouchableOpacity 
-            style={[styles.hintButton, (showHint || showResult) && styles.disabledButton]} 
-            onPress={toggleHint}
-            disabled={showHint || showResult}
+            style={[styles.submitButton, showResult && styles.disabledButton]} 
+            onPress={handleAnswer}
+            disabled={showResult}
           >
-            <FontAwesome name="lightbulb-o" size={16} color="#FFFFFF" />
-            <ThemedText style={styles.hintButtonText}>Show Hint (-5 points)</ThemedText>
+            <FontAwesome name="check" size={20} color="#FFFFFF" />
+            <ThemedText style={styles.submitButtonText}>Submit</ThemedText>
           </TouchableOpacity>
-          
-          {showHint && (
-            <View style={styles.hintContainer}>
-              <ThemedText style={styles.hintText}>{currentItem.hint}</ThemedText>
-            </View>
-          )}
-          
-          {showResult && (
-            <View style={[styles.resultContainer, isCorrect ? styles.correctResult : styles.incorrectResult]}>
-              <FontAwesome 
-                name={isCorrect ? "check-circle" : "times-circle"} 
-                size={30} 
-                color={isCorrect ? "#4CAF50" : "#F44336"} 
-              />
-              <ThemedText style={styles.resultText}>
-                {isCorrect 
-                  ? `Correct! ${hintUsed ? '+5 points' : '+10 points'}` 
-                  : `Incorrect! The answer was "${currentItem.name}"`
-                }
+        </View>
+
+        {/* Result Display */}
+        {showResult && (
+          <Animated.View style={styles.resultContainer}>
+            <FontAwesome 
+              name={isCorrect ? "check-circle" : "times-circle"} 
+              size={40} 
+              color={isCorrect ? "#4CAF50" : "#F44336"} 
+            />
+            <ThemedText style={[styles.resultText, { color: isCorrect ? "#4CAF50" : "#F44336" }]}>
+              {isCorrect ? "Correct!" : "Incorrect!"}
+            </ThemedText>
+            {!isCorrect && (
+              <ThemedText style={styles.correctAnswerText}>
+                The correct answer was: {currentItem.name}
               </ThemedText>
-              <TouchableOpacity style={styles.nextButton} onPress={moveToNextItem}>
-                <ThemedText style={styles.nextButtonText}>
-                  {currentItemIndex < gameItems.length - 1 ? "Next Item" : "See Results"}
-                </ThemedText>
-                <FontAwesome name="arrow-right" size={16} color="#FFFFFF" />
-              </TouchableOpacity>
-            </View>
-          )}
-        </Animated.View>
-      )}
+            )}
+          </Animated.View>
+        )}
+      </Animated.View>
+
+      {/* Bottom Actions */}
+      <View style={styles.bottomActions}>
+        <TouchableOpacity style={styles.endGameButton} onPress={endGame}>
+          <FontAwesome name="stop" size={20} color="#F44336" />
+          <ThemedText style={styles.endGameText}>End Game</ThemedText>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
+
+// Helper function to get difficulty color
+const getDifficultyColor = (difficulty: string) => {
+  switch (difficulty.toLowerCase()) {
+    case 'easy': return '#4CAF50';
+    case 'medium': return '#FF9800';
+    case 'hard': return '#F44336';
+    default: return '#4CAF50';
+  }
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -620,6 +525,42 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     zIndex: -1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 20,
+    fontSize: 18,
+    color: '#666666',
+    textAlign: 'center',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    marginTop: 20,
+    fontSize: 16,
+    color: '#dc2929',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: '#dc2929',
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    borderRadius: 25,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   scoreContainer: {
     flexDirection: 'row',
@@ -639,271 +580,256 @@ const styles = StyleSheet.create({
   scoreItem: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
   },
   scoreText: {
-    marginLeft: 6,
     fontSize: 16,
     fontWeight: '600',
     color: '#333333',
   },
-  urgentTime: {
-    color: '#dc2929',
-    fontWeight: '700',
-  },
-  gameContent: {
-    flex: 1,
-    padding: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+  progressContainer: {
+    paddingHorizontal: 20,
+    marginTop: 10,
   },
   progressBar: {
-    width: '100%',
-    height: 6,
-    backgroundColor: 'rgba(0, 0, 0, 0.1)',
-    borderRadius: 3,
-    marginBottom: 20,
-    overflow: 'hidden',
+    height: 4,
+    backgroundColor: 'rgba(220, 41, 41, 0.2)',
+    borderRadius: 2,
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#226cae',
-    borderRadius: 3,
+    backgroundColor: '#dc2929',
+    borderRadius: 2,
+  },
+  gameContent: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    alignItems: 'center',
+  },
+  infoContainer: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 20,
   },
   categoryBadge: {
-    position: 'absolute',
-    top: 30,
-    left: 20,
     backgroundColor: 'rgba(34, 108, 174, 0.1)',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 16,
+    borderRadius: 15,
   },
   categoryText: {
-    color: '#226cae',
+    fontSize: 12,
     fontWeight: '600',
-    fontSize: 14,
+    color: '#226cae',
   },
   difficultyBadge: {
-    position: 'absolute',
-    top: 30,
-    right: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.05)',
     paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 16,
-  },
-  difficultyIndicator: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 6,
+    borderRadius: 15,
   },
   difficultyText: {
-    color: '#666666',
-    fontWeight: '500',
-    fontSize: 14,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   iconContainer: {
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    alignItems: 'center',
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: 'rgba(220, 41, 41, 0.1)',
     justifyContent: 'center',
-    marginBottom: 40,
+    alignItems: 'center',
+    marginBottom: 20,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
-    elevation: 5,
-    borderWidth: 1,
-    borderColor: 'rgba(34, 108, 174, 0.2)',
+    elevation: 4,
   },
-  inputContainer: {
-    flexDirection: 'row',
-    width: '100%',
-    marginBottom: 16,
-  },
-  input: {
-    flex: 1,
-    height: 50,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: 'rgba(0, 0, 0, 0.1)',
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    fontSize: 16,
+  questionText: {
+    fontSize: 24,
+    fontWeight: '700',
     color: '#333333',
-  },
-  submitButton: {
-    width: 50,
-    height: 50,
-    backgroundColor: '#226cae',
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 10,
-  },
-  disabledButton: {
-    opacity: 0.5,
-  },
-  hintButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#dc2929',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginBottom: 16,
-  },
-  hintButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    marginLeft: 8,
+    textAlign: 'center',
+    marginBottom: 20,
   },
   hintContainer: {
-    backgroundColor: 'rgba(255, 193, 7, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 193, 7, 0.3)',
-    borderRadius: 8,
-    padding: 16,
-    width: '100%',
-    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 165, 0, 0.1)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginBottom: 20,
+    gap: 8,
   },
   hintText: {
-    color: '#333333',
-    fontSize: 16,
+    fontSize: 14,
+    color: '#FF8C00',
     fontStyle: 'italic',
-    textAlign: 'center',
+    flex: 1,
   },
-  resultContainer: {
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 8,
+  inputContainer: {
     width: '100%',
+    marginBottom: 20,
   },
-  correctResult: {
-    backgroundColor: 'rgba(76, 175, 80, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(76, 175, 80, 0.3)',
-  },
-  incorrectResult: {
-    backgroundColor: 'rgba(244, 67, 54, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(244, 67, 54, 0.3)',
-  },
-  resultText: {
-    fontSize: 18,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginVertical: 12,
-  },
-  nextButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#226cae',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginTop: 10,
-    width: '100%',
-  },
-  nextButtonText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    fontSize: 16,
-    marginRight: 8,
-  },
-  // New styles for filter
-  filterContainer: {
-    marginHorizontal: 20,
-    marginTop: 10,
-    marginBottom: 10,
-    zIndex: 10,
-  },
-  filterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  answerInput: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    paddingHorizontal: 15,
-    paddingVertical: 10,
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 18,
+    textAlign: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
   },
-  filterButtonText: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#333333',
-  },
-  filterDropdown: {
-    position: 'absolute',
-    top: 45,
-    left: 0,
-    right: 0,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    padding: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
-    zIndex: 10,
-  },
-  filterTabs: {
+  actionButtons: {
     flexDirection: 'row',
-    marginBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.05)',
+    gap: 15,
+    marginBottom: 20,
   },
-  filterTab: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  activeFilterTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: '#226cae',
-  },
-  filterTabText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#666666',
-  },
-  activeFilterTabText: {
-    color: '#226cae',
-    fontWeight: '600',
-  },
-  filterOptions: {
-    maxHeight: 200,
-  },
-  filterOption: {
+  hintButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 165, 0, 0.1)',
+    paddingHorizontal: 20,
     paddingVertical: 12,
-    paddingHorizontal: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.05)',
+    borderRadius: 25,
+    gap: 8,
   },
-  selectedFilterOption: {
-    backgroundColor: 'rgba(34, 108, 174, 0.05)',
-  },
-  filterOptionText: {
-    fontSize: 14,
-    color: '#333333',
-  },
-  selectedFilterOptionText: {
-    color: '#226cae',
+  hintButtonText: {
+    fontSize: 16,
     fontWeight: '600',
+    color: '#FFA500',
+  },
+  submitButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#dc2929',
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    borderRadius: 25,
+    gap: 8,
+    shadowColor: '#dc2929',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  disabledButton: {
+    opacity: 0.6,
+  },
+  submitButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  resultContainer: {
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  resultText: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginTop: 10,
+  },
+  correctAnswerText: {
+    fontSize: 16,
+    color: '#666666',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  bottomActions: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  endGameButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(244, 67, 54, 0.1)',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    gap: 8,
+  },
+  endGameText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#F44336',
+  },
+  gameOverContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  gameOverTitle: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#333333',
+    marginTop: 20,
+    marginBottom: 10,
+  },
+  finalScore: {
+    fontSize: 24,
+    fontWeight: '600',
+    color: '#dc2929',
+    marginBottom: 20,
+  },
+  gameOverMessage: {
+    fontSize: 16,
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 40,
+  },
+  gameOverButtons: {
+    flexDirection: 'row',
+    gap: 15,
+  },
+  playAgainButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#dc2929',
+    paddingHorizontal: 25,
+    paddingVertical: 12,
+    borderRadius: 25,
+    gap: 8,
+    shadowColor: '#dc2929',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  playAgainText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  backButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(102, 102, 102, 0.1)',
+    paddingHorizontal: 25,
+    paddingVertical: 12,
+    borderRadius: 25,
+    gap: 8,
+  },
+  backText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666666',
   },
 });

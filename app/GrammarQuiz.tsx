@@ -78,13 +78,19 @@ export default function GrammarQuiz() {
           const questions = firstGame.questions || [];
           
           // Convert questions to quiz format
-          const quizQuestions: QuizQuestion[] = questions.map((q: any, index: number) => ({
-            _id: q._id || `q${index}`,
-            question: q.questionText || `Question ${index + 1}`,
-            options: q.options ? q.options.map((opt: any) => opt.text) : [`Option ${index + 1}`],
-            correctAnswer: q.correctAnswer || q.options?.[0]?.text || `Option ${index + 1}`,
-            explanation: q.explanation || "Explanation for this question"
-          }));
+          const quizQuestions: QuizQuestion[] = questions.map((q: any, index: number) => {
+            // Find the correct answer from options
+            const correctOption = q.options?.find((opt: any) => opt.isCorrect);
+            const correctAnswerText = correctOption?.text || q.correctAnswer || q.options?.[0]?.text || `Option ${index + 1}`;
+            
+            return {
+              _id: q._id || `q${index}`,
+              question: q.questionText || q.question || `Question ${index + 1}`,
+              options: q.options ? q.options.map((opt: any) => opt.text) : [`Option ${index + 1}`, `Option ${index + 2}`, `Option ${index + 3}`, `Option ${index + 4}`],
+              correctAnswer: correctAnswerText,
+              explanation: q.explanation || correctOption?.explanation || "Explanation for this question"
+            };
+          });
           
           setQuizData(quizQuestions);
           setError(null);

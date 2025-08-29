@@ -25,7 +25,169 @@ const validateChatMessage = [
   body('messageType').isIn(['text', 'image', 'file', 'audio']).withMessage('Invalid message type')
 ];
 
-// 1. INITIATE ONE-TO-ONE CALL (Video or Voice)
+// 1. FIND PARTNER FOR REGION-BASED MATCHMAKING
+router.post('/matchmaking/find-partner', authenticateToken, [
+  body('sessionType').isIn(['chat', 'voice_call', 'video_call']).withMessage('Invalid session type'),
+  body('preferredLanguageLevel').optional().isIn(['beginner', 'intermediate', 'advanced']).withMessage('Invalid language level')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation errors',
+        errors: errors.array()
+      });
+    }
+
+    const { sessionType, preferredLanguageLevel } = req.body;
+    
+    // Get current user with region
+    const currentUser = await User.findById(req.user._id).populate('region', 'name code');
+    if (!currentUser || !currentUser.region) {
+      return res.status(400).json({
+        success: false,
+        message: 'User must be assigned to a region for matchmaking'
+      });
+    }
+
+    // Find available partners in the same region
+    let partnerQuery = {
+      _id: { $ne: req.user._id }, // Exclude current user
+      region: currentUser.region._id,
+      isActive: true,
+      role: 'student' // Only match students for language practice
+    };
+
+    // Add language level filter if specified
+    if (preferredLanguageLevel) {
+      partnerQuery['studentInfo.languageLevel'] = preferredLanguageLevel;
+    }
+
+    // Check if user is already in an active session
+    const existingSession = await Session.findOne({
+      'participants.user': req.user._id,
+      status: { $in: ['active', 'scheduled'] },
+      sessionType: { $in: ['chat', 'voice_call', 'video_call'] }
+    });
+
+    if (existingSession) {
+      return res.status(400).json({
+        success: false,
+        message: 'You are already in an active session',
+        data: {
+          existingSessionId: existingSession._id
+        }
+      });
+    }
+
+    // Find potential partners not currently in active sessions
+    const busyUserIds = await Session.distinct('participants.user', {
+      status: { $in: ['active', 'scheduled'] },
+      sessionType: { $in: ['chat', 'voice_call', 'video_call'] }
+    });
+
+    partnerQuery._id = { $ne: req.user._id, $nin: busyUserIds };
+
+    const availablePartners = await User.find(partnerQuery)
+      .select('name email profilePicture studentInfo.languageLevel lastActive')
+      .sort({ lastActive: -1 }) // Prioritize recently active users
+      .limit(10);
+
+    if (availablePartners.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No available partners found in your region',
+        data: {
+          partner: null,
+          waitingInQueue: true,
+          regionInfo: {
+            name: currentUser.region.name,
+            code: currentUser.region.code
+          }
+        }
+      });
+    }
+
+    // Select a random partner from available options
+    const selectedPartner = availablePartners[Math.floor(Math.random() * availablePartners.length)];
+
+    // Create a session immediately for chat, or return partner info for calls
+    let session = null;
+    if (sessionType === 'chat') {
+      // For chat, create the session immediately
+      session = new Session({
+        sessionId: `chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        sessionType: 'chat',
+        title: `Chat Session`,
+        description: `Region-based chat between ${currentUser.name} and ${selectedPartner.name}`,
+        host: req.user._id,
+        participants: [
+          {
+            user: req.user._id,
+            role: 'host',
+            joinedAt: new Date(),
+            isActive: true
+          },
+          {
+            user: selectedPartner._id,
+            role: 'participant',
+            joinedAt: new Date(),
+            isActive: false // Partner hasn't joined yet
+          }
+        ],
+        status: 'scheduled',
+        scheduledAt: new Date(),
+        chatSession: {
+          messages: [],
+          totalMessages: 0,
+          lastMessageAt: null
+        }
+      });
+
+      await session.save();
+    }
+
+    res.json({
+      success: true,
+      message: sessionType === 'chat' ? 'Chat partner found and session created' : 'Call partner found',
+      data: {
+        partner: {
+          id: selectedPartner._id,
+          name: selectedPartner.name,
+          email: selectedPartner.email,
+          profilePicture: selectedPartner.profilePicture,
+          languageLevel: selectedPartner.studentInfo?.languageLevel || 'beginner',
+          lastActive: selectedPartner.lastActive
+        },
+        session: session ? {
+          id: session._id,
+          sessionId: session.sessionId,
+          sessionType: session.sessionType,
+          title: session.title,
+          status: session.status
+        } : null,
+        regionInfo: {
+          name: currentUser.region.name,
+          code: currentUser.region.code
+        },
+        matchingCriteria: {
+          region: currentUser.region.name,
+          languageLevel: preferredLanguageLevel || 'any'
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Find partner error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error during matchmaking'
+    });
+  }
+});
+
+// 2. INITIATE ONE-TO-ONE CALL (Video or Voice)
 router.post('/call/initiate', authenticateToken, validateCallRequest, async (req, res) => {
   try {
     const errors = validationResult(req);

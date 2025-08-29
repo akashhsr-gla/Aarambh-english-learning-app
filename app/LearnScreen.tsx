@@ -1,130 +1,147 @@
-import { StyleSheet, View, TouchableOpacity, ScrollView, FlatList, Dimensions } from 'react-native';
-import { useState, useRef } from 'react';
 import { FontAwesome } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
-import { StatusBar } from 'expo-status-bar';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
+import { StatusBar } from 'expo-status-bar';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, Dimensions, FlatList, Linking, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
+import Header from '../components/Header';
 import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
-import Header from '../components/Header';
+import { lecturesAPI } from './services/api';
 
-// Define lesson type
-interface Lesson {
-  id: number;
+// Define lecture type from backend
+interface Lecture {
+  _id: string;
   title: string;
   description: string;
-  duration: string;
-  thumbnail: string;
-  completed: boolean;
+  duration: number; // in seconds
+  thumbnailUrl?: string;
+  videoUrl: string;
+  notes?: {
+    pdfUrl?: string;
+    textContent?: string;
+  };
+  instructor?: {
+    name: string;
+    email: string;
+  };
+  difficulty: 'beginner' | 'intermediate' | 'advanced';
+  tags: string[];
+  isPremium: boolean;
+  isActive: boolean;
+  totalViews: number;
+  createdAt: string;
+  completed?: boolean; // This will be tracked on frontend
 }
 
-// Sample lesson data
-const LESSONS: Lesson[] = [
-  {
-    id: 1,
-    title: 'Introduction to English',
-    description: 'Learn the basics of English language and pronunciation',
-    duration: '10 min',
-    thumbnail: 'https://i.imgur.com/JR0s5QW.jpg',
-    completed: true,
-  },
-  {
-    id: 2,
-    title: 'Basic Greetings',
-    description: 'Common greetings and introductions in English',
-    duration: '8 min',
-    thumbnail: 'https://i.imgur.com/KzVPU3L.jpg',
-    completed: true,
-  },
-  {
-    id: 3,
-    title: 'Everyday Conversations',
-    description: 'How to handle daily conversations in English',
-    duration: '15 min',
-    thumbnail: 'https://i.imgur.com/qJ9xSAS.jpg',
-    completed: false,
-  },
-  {
-    id: 4,
-    title: 'Shopping Vocabulary',
-    description: 'Essential words and phrases for shopping',
-    duration: '12 min',
-    thumbnail: 'https://i.imgur.com/LY0qiQZ.jpg',
-    completed: false,
-  },
-  {
-    id: 5,
-    title: 'Asking for Directions',
-    description: 'How to ask for and understand directions',
-    duration: '9 min',
-    thumbnail: 'https://i.imgur.com/fR8yZMJ.jpg',
-    completed: false,
-  },
-  {
-    id: 6,
-    title: 'At the Restaurant',
-    description: 'Ordering food and having conversations at restaurants',
-    duration: '14 min',
-    thumbnail: 'https://i.imgur.com/D5mWANZ.jpg',
-    completed: false,
-  },
-  {
-    id: 7,
-    title: 'Travel Conversations',
-    description: 'Essential phrases for traveling in English-speaking countries',
-    duration: '18 min',
-    thumbnail: 'https://i.imgur.com/H8R3riY.jpg',
-    completed: false,
-  },
-];
+// This will be replaced with backend data
 
 // Categories
 const CATEGORIES = [
   'All Lessons',
-  'Beginner',
-  'Intermediate',
-  'Advanced',
-  'Speaking',
-  'Listening',
+  'beginner',
+  'intermediate', 
+  'advanced',
 ];
 
 export default function LearnScreen() {
   const navigation = useNavigation();
   const [selectedCategory, setSelectedCategory] = useState('All Lessons');
-  const [activeLesson, setActiveLesson] = useState<Lesson | null>(null);
+  const [activeLecture, setActiveLecture] = useState<Lecture | null>(null);
+  const [lectures, setLectures] = useState<Lecture[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [completedLectures, setCompletedLectures] = useState<Set<string>>(new Set());
   
+  // Fetch lectures from backend
+  useEffect(() => {
+    fetchLectures();
+  }, []);
+
   // Calculate progress
-  const completedLessons = LESSONS.filter(lesson => lesson.completed).length;
-  const totalLessons = LESSONS.length;
-  const progressPercentage = (completedLessons / totalLessons) * 100;
-  
-  const handleLessonPress = (lesson: Lesson) => {
-    setActiveLesson(lesson);
-    // In a real app, you would navigate to a video player screen
-    // navigation.navigate('VideoPlayerScreen', { lesson });
+  const completedLessonsCount = completedLectures.size;
+  const totalLessons = lectures.length;
+  const progressPercentage = totalLessons > 0 ? (completedLessonsCount / totalLessons) * 100 : 0;
+
+  const fetchLectures = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await lecturesAPI.getAllLectures(1, 50); // Get first 50 lectures
+      
+      if (response.success && response.data?.lectures) {
+        setLectures(response.data.lectures);
+      } else {
+        setError('Failed to load lectures');
+      }
+    } catch (err) {
+      console.error('Error fetching lectures:', err);
+      setError('Network error. Please check your connection.');
+    } finally {
+      setLoading(false);
+    }
   };
   
-  const renderLessonCard = ({ item }: { item: Lesson }) => (
+  const handleLecturePress = async (lecture: Lecture) => {
+    setActiveLecture(lecture);
+    // Mark as viewed
+    try {
+      await lecturesAPI.markAsViewed(lecture._id);
+      setCompletedLectures(prev => new Set([...prev, lecture._id]));
+    } catch (err) {
+      console.error('Error marking lecture as viewed:', err);
+    }
+    // Fetch full lecture details (including notes)
+    try {
+      const details = await lecturesAPI.getLecture(lecture._id);
+      if (details?.success && details.data) {
+        setActiveLecture(details.data);
+      }
+    } catch (err) {
+      // Non-fatal if notes fail to load
+      console.error('Error fetching lecture details:', err);
+    }
+    // In a real app, you would navigate to a video player screen
+    // navigation.navigate('VideoPlayerScreen', { lecture });
+  };
+
+  // Filter lectures based on selected category
+  const filteredLectures = selectedCategory === 'All Lessons' 
+    ? lectures 
+    : lectures.filter(lecture => lecture.difficulty === selectedCategory);
+
+  // Helper function to format duration
+  const formatDuration = (seconds: number) => {
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes} min`;
+  };
+  
+  const renderLectureCard = ({ item }: { item: Lecture }) => (
     <TouchableOpacity 
       style={styles.lessonCard}
-      onPress={() => handleLessonPress(item)}
+      onPress={() => handleLecturePress(item)}
       activeOpacity={0.9}
     >
       <View style={styles.thumbnailContainer}>
         <Image
-          source={{ uri: item.thumbnail }}
+          source={{ uri: item.thumbnailUrl || 'https://via.placeholder.com/300x180?text=No+Image' }}
           style={styles.thumbnail}
           contentFit="cover"
         />
         <View style={styles.durationBadge}>
           <FontAwesome name="clock-o" size={12} color="#FFFFFF" />
-          <ThemedText style={styles.durationText}>{item.duration}</ThemedText>
+          <ThemedText style={styles.durationText}>{formatDuration(item.duration)}</ThemedText>
         </View>
-        {item.completed && (
+        {completedLectures.has(item._id) && (
           <View style={styles.completedBadge}>
             <FontAwesome name="check" size={12} color="#FFFFFF" />
+          </View>
+        )}
+        {item.isPremium && (
+          <View style={styles.premiumBadge}>
+            <FontAwesome name="star" size={12} color="#FFD700" />
           </View>
         )}
       </View>
@@ -133,6 +150,15 @@ export default function LearnScreen() {
         <ThemedText style={styles.lessonDescription} numberOfLines={2}>
           {item.description}
         </ThemedText>
+        <View style={styles.lectureMetadata}>
+          <View style={styles.difficultyBadge}>
+            <ThemedText style={styles.difficultyText}>{item.difficulty}</ThemedText>
+          </View>
+          <View style={styles.viewsContainer}>
+            <FontAwesome name="eye" size={12} color="#666666" />
+            <ThemedText style={styles.viewsText}>{item.totalViews} views</ThemedText>
+          </View>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -158,7 +184,7 @@ export default function LearnScreen() {
           <View style={styles.progressHeader}>
             <ThemedText style={styles.progressTitle}>Your Progress</ThemedText>
             <ThemedText style={styles.progressStats}>
-              {completedLessons}/{totalLessons} lessons completed
+              {completedLessonsCount}/{totalLessons} lectures completed
             </ThemedText>
           </View>
           
@@ -175,13 +201,13 @@ export default function LearnScreen() {
             <View style={styles.progressDetail}>
               <FontAwesome name="check-circle" size={16} color="#4CAF50" />
               <ThemedText style={styles.progressDetailText}>
-                {completedLessons} Completed
+                {completedLessonsCount} Completed
               </ThemedText>
             </View>
             <View style={styles.progressDetail}>
               <FontAwesome name="circle-o" size={16} color="#dc2929" />
               <ThemedText style={styles.progressDetailText}>
-                {totalLessons - completedLessons} Remaining
+                {totalLessons - completedLessonsCount} Remaining
               </ThemedText>
             </View>
           </View>
@@ -214,8 +240,27 @@ export default function LearnScreen() {
           ))}
         </ScrollView>
         
-        {/* Active Lesson (if any) */}
-        {activeLesson && (
+        {/* Loading State */}
+        {loading && (
+          <ThemedView style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#226cae" />
+            <ThemedText style={styles.loadingText}>Loading lectures...</ThemedText>
+          </ThemedView>
+        )}
+
+        {/* Error State */}
+        {error && (
+          <ThemedView style={styles.errorContainer}>
+            <FontAwesome name="exclamation-triangle" size={48} color="#dc2929" />
+            <ThemedText style={styles.errorText}>{error}</ThemedText>
+            <TouchableOpacity style={styles.retryButton} onPress={fetchLectures}>
+              <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
+            </TouchableOpacity>
+          </ThemedView>
+        )}
+
+        {/* Active Lecture (if any) */}
+        {activeLecture && (
           <ThemedView style={styles.activeLesson}>
             <View style={styles.activeLessonHeader}>
               <ThemedText style={styles.activeLessonTitle}>
@@ -223,7 +268,7 @@ export default function LearnScreen() {
               </ThemedText>
               <TouchableOpacity 
                 style={styles.closeButton}
-                onPress={() => setActiveLesson(null)}
+                onPress={() => setActiveLecture(null)}
               >
                 <FontAwesome name="times" size={16} color="#666666" />
               </TouchableOpacity>
@@ -231,7 +276,7 @@ export default function LearnScreen() {
             
             <View style={styles.videoPreview}>
               <Image
-                source={{ uri: activeLesson.thumbnail }}
+                source={{ uri: activeLecture.thumbnailUrl || 'https://via.placeholder.com/300x180?text=No+Image' }}
                 style={styles.videoThumbnail}
                 contentFit="cover"
               />
@@ -241,11 +286,32 @@ export default function LearnScreen() {
             </View>
             
             <ThemedText style={styles.activeLessonTitle}>
-              {activeLesson.title}
+              {activeLecture.title}
             </ThemedText>
             <ThemedText style={styles.activeLessonDescription}>
-              {activeLesson.description}
+              {activeLecture.description}
             </ThemedText>
+            {activeLecture.notes && (
+              <ThemedView style={styles.notesContainer}>
+                <View style={styles.notesHeader}>
+                  <FontAwesome name="sticky-note" size={16} color="#226cae" />
+                  <ThemedText style={styles.notesTitle}>Notes</ThemedText>
+                </View>
+                {activeLecture.notes.textContent && (
+                  <ThemedText style={styles.notesText}>{activeLecture.notes.textContent}</ThemedText>
+                )}
+                {activeLecture.notes.pdfUrl && (
+                  <TouchableOpacity 
+                    style={styles.notesLinkButton}
+                    onPress={() => Linking.openURL(activeLecture.notes!.pdfUrl!)}
+                    activeOpacity={0.8}
+                  >
+                    <FontAwesome name="file-pdf-o" size={16} color="#FFFFFF" />
+                    <ThemedText style={styles.notesLinkText}>Open Notes PDF</ThemedText>
+                  </TouchableOpacity>
+                )}
+              </ThemedView>
+            )}
             
             <View style={styles.videoControls}>
               <TouchableOpacity style={styles.videoControlButton}>
@@ -261,48 +327,19 @@ export default function LearnScreen() {
           </ThemedView>
         )}
         
-        {/* Lessons List */}
-        <ThemedText style={styles.sectionTitle}>All Lessons</ThemedText>
-        <FlatList
-          data={LESSONS}
-          renderItem={renderLessonCard}
-          keyExtractor={(item) => item.id.toString()}
-          scrollEnabled={false}
-          contentContainerStyle={styles.lessonsList}
-        />
-        
-        {/* Recommendations */}
-        <ThemedText style={styles.sectionTitle}>Recommended for You</ThemedText>
-        <ScrollView 
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.recommendationsContainer}
-        >
-          {LESSONS.slice(0, 3).map((lesson) => (
-            <TouchableOpacity 
-              key={lesson.id}
-              style={styles.recommendationCard}
-              onPress={() => handleLessonPress(lesson)}
-            >
-              <Image
-                source={{ uri: lesson.thumbnail }}
-                style={styles.recommendationThumbnail}
-                contentFit="cover"
-              />
-              <ThemedText style={styles.recommendationTitle} numberOfLines={2}>
-                {lesson.title}
-              </ThemedText>
-              <View style={styles.recommendationMeta}>
-                <ThemedText style={styles.recommendationDuration}>
-                  {lesson.duration}
-                </ThemedText>
-                {lesson.completed && (
-                  <FontAwesome name="check-circle" size={14} color="#4CAF50" />
-                )}
-              </View>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        {/* Lectures List */}
+        {!loading && !error && (
+          <>
+            <ThemedText style={styles.sectionTitle}>All Lectures</ThemedText>
+            <FlatList
+              data={filteredLectures}
+              renderItem={renderLectureCard}
+              keyExtractor={(item) => item._id}
+              scrollEnabled={false}
+              contentContainerStyle={styles.lessonsList}
+            />
+          </>
+        )}
       </ScrollView>
     </View>
   );
@@ -595,5 +632,132 @@ const styles = StyleSheet.create({
     width: 50,
     height: 50,
     borderRadius: 25,
+  },
+  loadingContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 15,
+    padding: 40,
+    marginBottom: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  loadingText: {
+    marginTop: 15,
+    fontSize: 16,
+    color: '#666666',
+  },
+  errorContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 15,
+    padding: 40,
+    marginBottom: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    borderLeftWidth: 4,
+    borderLeftColor: '#dc2929',
+  },
+  errorText: {
+    marginTop: 15,
+    fontSize: 16,
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: '#dc2929',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  premiumBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lectureMetadata: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  difficultyBadge: {
+    backgroundColor: 'rgba(34, 108, 174, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  difficultyText: {
+    fontSize: 12,
+    color: '#226cae',
+    fontWeight: '500',
+    textTransform: 'capitalize',
+  },
+  viewsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  viewsText: {
+    fontSize: 12,
+    color: '#666666',
+  },
+  notesContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 108, 174, 0.2)',
+  },
+  notesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  notesTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#226cae',
+  },
+  notesText: {
+    fontSize: 14,
+    color: '#333333',
+    lineHeight: 20,
+  },
+  notesLinkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#226cae',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    marginTop: 10,
+    gap: 8,
+  },
+  notesLinkText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
 }); 

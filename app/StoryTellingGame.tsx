@@ -88,12 +88,12 @@ export default function StoryTellingGame() {
           // Convert questions to story prompts format
           const prompts: StoryPrompt[] = questions.map((q: any, index: number) => ({
             _id: q._id || `q${index}`,
-            title: q.questionText || `Story ${index + 1}`,
-            beginning: q.questionText || "Once upon a time...",
-            keywords: q.keywords || ["word1", "word2", "word3"],
+            title: q.title || q.questionText || `Story Prompt ${index + 1}`,
+            beginning: q.storyBeginning || q.questionText || "Once upon a time...",
+            keywords: q.keywords || q.suggestedWords || ["adventure", "challenge", "discovery"],
             difficulty: q.difficulty || "Medium",
-            minWords: q.minWords || 30,
-            timeLimit: q.timeLimit || 120
+            minWords: q.minWords || q.wordLimit || 50,
+            timeLimit: q.timeLimit || firstGame.timeLimit || 180
           }));
           
           setStoryPrompts(prompts);
@@ -695,7 +695,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   storyTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: '700',
     color: '#333333',
     flex: 1,
@@ -728,8 +728,8 @@ const styles = StyleSheet.create({
     borderLeftColor: '#226cae',
   },
   storyPrompt: {
-    fontSize: 16,
-    lineHeight: 24,
+    fontSize: 14,
+    lineHeight: 20,
     color: '#333333',
     fontStyle: 'italic',
   },
@@ -737,7 +737,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   keywordsTitle: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     color: '#333333',
     marginBottom: 8,
@@ -762,7 +762,7 @@ const styles = StyleSheet.create({
   keywordText: {
     color: '#dc2929',
     fontWeight: '500',
-    fontSize: 14,
+    fontSize: 13,
   },
   usedKeywordText: {
     color: '#4CAF50',
@@ -778,7 +778,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(0, 0, 0, 0.1)',
     borderRadius: 8,
     padding: 16,
-    fontSize: 16,
+    fontSize: 15,
     color: '#333333',
     textAlignVertical: 'top',
   },

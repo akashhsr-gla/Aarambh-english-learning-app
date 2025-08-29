@@ -1,11 +1,183 @@
 import { FontAwesome } from '@expo/vector-icons';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import Header from '@/components/Header';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import { authAPI, leaderboardAPI, sessionsAPI } from '../services/api';
+
+interface RegionData {
+  name: string;
+  totalPlayers: number;
+  onlineNow: number;
+  userRank: string;
+}
+
+interface ActivityStats {
+  chatSessions: number;
+  chatRating: number;
+  gamesPlayed: number;
+  pointsEarned: number;
+  lessonsCompleted: number;
+  newWordsLearned: number;
+}
+
+interface PlayerData {
+  rank: number;
+  name: string;
+  level: string;
+  points: number;
+  trophies: number;
+}
 
 export default function TrophiesScreen() {
+  const [loading, setLoading] = useState(true);
+  const [regionData, setRegionData] = useState<RegionData>({
+    name: 'Loading...',
+    totalPlayers: 0,
+    onlineNow: 0,
+    userRank: 'Loading...'
+  });
+  const [activityStats, setActivityStats] = useState<ActivityStats>({
+    chatSessions: 0,
+    chatRating: 0,
+    gamesPlayed: 0,
+    pointsEarned: 0,
+    lessonsCompleted: 0,
+    newWordsLearned: 0
+  });
+  const [topPlayers, setTopPlayers] = useState<PlayerData[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchTrophiesData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Get current user data
+      const userResponse = await authAPI.getCurrentUser();
+      if (!userResponse.success || !userResponse.data.user) {
+        throw new Error('Failed to get user data');
+      }
+
+      const user = userResponse.data.user;
+      if (!user.region) {
+        throw new Error('User not assigned to a region');
+      }
+
+      // Get user's rank data
+      let userRankData = null;
+      let leaderboardData = null;
+      
+      if (user.role === 'student') {
+        try {
+          const rankResponse = await leaderboardAPI.getMyRank();
+          if (rankResponse.success) {
+            userRankData = rankResponse.data;
+          }
+        } catch (error) {
+          console.log('Rank fetch error:', error);
+        }
+
+        // Get region leaderboard for top players
+        try {
+          const leaderboardResponse = await leaderboardAPI.getRegionLeaderboard(user.region._id, 1, 3);
+          if (leaderboardResponse.success) {
+            leaderboardData = leaderboardResponse.data.leaderboard;
+          }
+        } catch (error) {
+          console.log('Leaderboard fetch error:', error);
+        }
+      }
+
+      // Get user sessions for activity stats
+      let sessionsData = null;
+      try {
+        const sessionsResponse = await sessionsAPI.getMySessions();
+        if (sessionsResponse.success) {
+          sessionsData = sessionsResponse.data.sessions;
+        }
+      } catch (error) {
+        console.log('Sessions fetch error:', error);
+      }
+
+      // Update region data
+      setRegionData({
+        name: user.region.name,
+        totalPlayers: userRankData?.totalPlayersInRegion || 0,
+        onlineNow: Math.floor((userRankData?.totalPlayersInRegion || 0) * 0.1), // Estimated
+        userRank: userRankData ? `#${userRankData.rank}` : (user.role === 'student' ? 'Unranked' : 'N/A')
+      });
+
+      // Calculate activity stats from user data and sessions
+      const stats = userRankData?.statistics || {
+        lecturesWatched: user.studentInfo?.totalLecturesWatched || 0,
+        gameSessions: 0,
+        communicationSessions: 0,
+        totalScore: 0
+      };
+
+      const chatSessions = sessionsData ? sessionsData.filter((s: any) => 
+        s.sessionType === 'chat' || s.sessionType.includes('call')
+      ).length : stats.communicationSessions;
+
+      setActivityStats({
+        chatSessions,
+        chatRating: 4.5, // Placeholder - would need rating system
+        gamesPlayed: stats.gameSessions,
+        pointsEarned: stats.totalScore,
+        lessonsCompleted: stats.lecturesWatched,
+        newWordsLearned: stats.lecturesWatched * 5 // Estimate
+      });
+
+      // Update top players
+      if (leaderboardData && leaderboardData.length > 0) {
+        const players = leaderboardData.slice(0, 3).map((entry: any, index: number) => ({
+          rank: entry.rank,
+          name: entry.student.name,
+          level: `Level ${Math.floor(entry.statistics.totalScore / 100) + 1}`,
+          points: entry.statistics.totalScore,
+          trophies: Math.floor(entry.statistics.totalScore / 200) + index + 1
+        }));
+        setTopPlayers(players);
+      }
+
+    } catch (error) {
+      console.error('Error fetching trophies data:', error);
+      setError('Failed to load trophies data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTrophiesData();
+  }, []);
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <Header title="Trophies" />
+        <ActivityIndicator size="large" color="#dc2929" />
+        <ThemedText style={styles.loadingText}>Loading trophies...</ThemedText>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <Header title="Trophies" />
+        <FontAwesome name="exclamation-triangle" size={50} color="#dc2929" />
+        <ThemedText style={styles.errorText}>{error}</ThemedText>
+        <TouchableOpacity style={styles.retryButton} onPress={fetchTrophiesData}>
+          <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.container}>
       {/* Header */}
@@ -23,22 +195,22 @@ export default function TrophiesScreen() {
           <View style={[styles.regionIconContainer, { backgroundColor: '#dc2929' }]}>
             <FontAwesome name="globe" size={24} color="#FFFFFF" />
           </View>
-          <ThemedText style={styles.regionTitle}>Your Region: Delhi</ThemedText>
+          <ThemedText style={styles.regionTitle}>Your Region: {regionData.name}</ThemedText>
         </View>
         
         <View style={styles.regionStats}>
           <View style={styles.regionStat}>
-            <ThemedText style={styles.statNumber}>1,245</ThemedText>
+            <ThemedText style={styles.statNumber}>{regionData.totalPlayers.toLocaleString()}</ThemedText>
             <ThemedText style={styles.statLabel}>Total Players</ThemedText>
           </View>
           <View style={[styles.regionDivider, { backgroundColor: 'rgba(220, 41, 41, 0.2)' }]} />
           <View style={styles.regionStat}>
-            <ThemedText style={[styles.statNumber, { color: '#dc2929' }]}>87</ThemedText>
+            <ThemedText style={[styles.statNumber, { color: '#dc2929' }]}>{regionData.onlineNow}</ThemedText>
             <ThemedText style={styles.statLabel}>Online Now</ThemedText>
           </View>
           <View style={[styles.regionDivider, { backgroundColor: 'rgba(34, 108, 174, 0.2)' }]} />
           <View style={styles.regionStat}>
-            <ThemedText style={[styles.statNumber, { color: '#226cae' }]}>#4</ThemedText>
+            <ThemedText style={[styles.statNumber, { color: '#226cae' }]}>{regionData.userRank}</ThemedText>
             <ThemedText style={styles.statLabel}>Your Rank</ThemedText>
           </View>
         </View>
@@ -67,10 +239,10 @@ export default function TrophiesScreen() {
             </View>
             <View style={styles.activityStats}>
               <ThemedText style={styles.activityStatText}>
-                <ThemedText style={styles.activityStatHighlight}>32</ThemedText> conversations
+                <ThemedText style={styles.activityStatHighlight}>{activityStats.chatSessions}</ThemedText> conversations
               </ThemedText>
               <ThemedText style={styles.activityStatText}>
-                <ThemedText style={styles.activityStatHighlight}>4.5</ThemedText> avg. rating
+                <ThemedText style={styles.activityStatHighlight}>{activityStats.chatRating}</ThemedText> avg. rating
               </ThemedText>
             </View>
           </View>
@@ -88,10 +260,10 @@ export default function TrophiesScreen() {
             </View>
             <View style={styles.activityStats}>
               <ThemedText style={styles.activityStatText}>
-                <ThemedText style={styles.activityStatHighlight}>48</ThemedText> games completed
+                <ThemedText style={styles.activityStatHighlight}>{activityStats.gamesPlayed}</ThemedText> games completed
               </ThemedText>
               <ThemedText style={styles.activityStatText}>
-                <ThemedText style={styles.activityStatHighlight}>860</ThemedText> points earned
+                <ThemedText style={styles.activityStatHighlight}>{activityStats.pointsEarned}</ThemedText> points earned
               </ThemedText>
             </View>
           </View>
@@ -109,10 +281,10 @@ export default function TrophiesScreen() {
             </View>
             <View style={styles.activityStats}>
               <ThemedText style={styles.activityStatText}>
-                <ThemedText style={styles.activityStatHighlight}>18</ThemedText> lessons completed
+                <ThemedText style={styles.activityStatHighlight}>{activityStats.lessonsCompleted}</ThemedText> lessons completed
               </ThemedText>
               <ThemedText style={styles.activityStatText}>
-                <ThemedText style={styles.activityStatHighlight}>120</ThemedText> new words learned
+                <ThemedText style={styles.activityStatHighlight}>{activityStats.newWordsLearned}</ThemedText> new words learned
               </ThemedText>
             </View>
           </View>
@@ -130,83 +302,46 @@ export default function TrophiesScreen() {
 
       {/* Player Cards */}
       <View style={styles.playerCardsContainer}>
-        {/* Player 1 */}
-        <ThemedView style={[styles.playerCard, { borderLeftWidth: 4, borderLeftColor: '#FFD700' }]}>
-          <View style={[styles.rankBadge, { backgroundColor: '#dc2929' }]}>
-            <ThemedText style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 12 }}>1</ThemedText>
-          </View>
-          <View style={styles.playerInfo}>
-            <View style={[styles.playerAvatar, styles.goldAvatar]}>
-              <FontAwesome name="user" size={20} color="#FFFFFF" />
-            </View>
-            <View style={styles.playerDetails}>
-              <ThemedText style={styles.playerName}>Rahul S.</ThemedText>
-              <ThemedText style={styles.playerCode}>Level 8 • Expert</ThemedText>
-            </View>
-          </View>
-          <View style={styles.playerStats}>
-            <View style={styles.points}>
-              <FontAwesome name="star" size={16} color="#dc2929" />
-              <ThemedText style={styles.statsText}>2,450</ThemedText>
-            </View>
-            <View style={styles.trophies}>
-              <FontAwesome name="trophy" size={16} color="#FFD700" />
-              <ThemedText style={styles.statsText}>12</ThemedText>
-            </View>
-          </View>
-        </ThemedView>
-
-        {/* Player 2 */}
-        <ThemedView style={[styles.playerCard, { borderLeftWidth: 4, borderLeftColor: '#C0C0C0' }]}>
-          <View style={[styles.rankBadge, { backgroundColor: '#226cae' }]}>
-            <ThemedText style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 12 }}>2</ThemedText>
-          </View>
-          <View style={styles.playerInfo}>
-            <View style={[styles.playerAvatar, styles.silverAvatar]}>
-              <FontAwesome name="user" size={20} color="#FFFFFF" />
-            </View>
-            <View style={styles.playerDetails}>
-              <ThemedText style={styles.playerName}>Priya M.</ThemedText>
-              <ThemedText style={styles.playerCode}>Level 7 • Expert</ThemedText>
-            </View>
-          </View>
-          <View style={styles.playerStats}>
-            <View style={styles.points}>
-              <FontAwesome name="star" size={16} color="#dc2929" />
-              <ThemedText style={styles.statsText}>2,105</ThemedText>
-            </View>
-            <View style={styles.trophies}>
-              <FontAwesome name="trophy" size={16} color="#C0C0C0" />
-              <ThemedText style={styles.statsText}>10</ThemedText>
-            </View>
-          </View>
-        </ThemedView>
-
-        {/* Player 3 */}
-        <ThemedView style={[styles.playerCard, { borderLeftWidth: 4, borderLeftColor: '#CD7F32' }]}>
-          <View style={[styles.rankBadge, { backgroundColor: '#dc2929' }]}>
-            <ThemedText style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 12 }}>3</ThemedText>
-          </View>
-          <View style={styles.playerInfo}>
-            <View style={[styles.playerAvatar, styles.bronzeAvatar]}>
-              <FontAwesome name="user" size={20} color="#FFFFFF" />
-            </View>
-            <View style={styles.playerDetails}>
-              <ThemedText style={styles.playerName}>Amit K.</ThemedText>
-              <ThemedText style={styles.playerCode}>Level 6 • Advanced</ThemedText>
-            </View>
-          </View>
-          <View style={styles.playerStats}>
-            <View style={styles.points}>
-              <FontAwesome name="star" size={16} color="#dc2929" />
-              <ThemedText style={styles.statsText}>1,890</ThemedText>
-            </View>
-            <View style={styles.trophies}>
-              <FontAwesome name="trophy" size={16} color="#CD7F32" />
-              <ThemedText style={styles.statsText}>8</ThemedText>
-            </View>
-          </View>
-        </ThemedView>
+        {topPlayers.length > 0 ? (
+          topPlayers.map((player, index) => {
+            const borderColors = ['#FFD700', '#C0C0C0', '#CD7F32'];
+            const avatarStyles = [styles.goldAvatar, styles.silverAvatar, styles.bronzeAvatar];
+            const trophyColors = ['#FFD700', '#C0C0C0', '#CD7F32'];
+            const badgeColors = ['#dc2929', '#226cae', '#dc2929'];
+            
+            return (
+              <ThemedView key={index} style={[styles.playerCard, { borderLeftWidth: 4, borderLeftColor: borderColors[index] }]}>
+                <View style={[styles.rankBadge, { backgroundColor: badgeColors[index] }]}>
+                  <ThemedText style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 12 }}>{player.rank}</ThemedText>
+                </View>
+                <View style={styles.playerInfo}>
+                  <View style={[styles.playerAvatar, avatarStyles[index]]}>
+                    <FontAwesome name="user" size={20} color="#FFFFFF" />
+                  </View>
+                  <View style={styles.playerDetails}>
+                    <ThemedText style={styles.playerName}>{player.name}</ThemedText>
+                    <ThemedText style={styles.playerCode}>{player.level}</ThemedText>
+                  </View>
+                </View>
+                <View style={styles.playerStats}>
+                  <View style={styles.points}>
+                    <FontAwesome name="star" size={16} color="#dc2929" />
+                    <ThemedText style={styles.statsText}>{player.points}</ThemedText>
+                  </View>
+                  <View style={styles.trophies}>
+                    <FontAwesome name="trophy" size={16} color={trophyColors[index]} />
+                    <ThemedText style={styles.statsText}>{player.trophies}</ThemedText>
+                  </View>
+                </View>
+              </ThemedView>
+            );
+          })
+        ) : (
+          <ThemedView style={styles.noDataCard}>
+            <FontAwesome name="users" size={40} color="#666666" />
+            <ThemedText style={styles.noDataText}>No leaderboard data available</ThemedText>
+          </ThemedView>
+        )}
       </View>
       
       
@@ -519,5 +654,51 @@ const styles = StyleSheet.create({
   progressText: {
     fontSize: 12,
     color: '#666666',
+  },
+  centerContent: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    flex: 1,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666666',
+    marginTop: 16,
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#dc2929',
+    marginTop: 16,
+    textAlign: 'center',
+    paddingHorizontal: 20,
+  },
+  retryButton: {
+    backgroundColor: '#dc2929',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginTop: 16,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  noDataCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 15,
+    padding: 40,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  noDataText: {
+    fontSize: 16,
+    color: '#666666',
+    marginTop: 12,
+    textAlign: 'center',
   },
 }); 

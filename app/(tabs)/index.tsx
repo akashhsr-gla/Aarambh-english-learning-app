@@ -2,8 +2,10 @@ import { FontAwesome } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+
+import { authAPI, leaderboardAPI } from '../services/api';
 
 import Header from '@/components/Header';
 import { ThemedText } from '@/components/ThemedText';
@@ -14,6 +16,61 @@ export default function HomeScreen() {
   
   // Animation values for rotation
   const rotationAnim = useRef(new Animated.Value(0)).current;
+  
+  // User data state
+  const [userData, setUserData] = useState({
+    name: 'Loading...',
+    playerCode: 'Loading...',
+    points: 0,
+    region: 'Loading...',
+    rank: 'Loading...'
+  });
+  const [loading, setLoading] = useState(true);
+  
+  // Fetch user data
+  const fetchUserData = async () => {
+    try {
+      setLoading(true);
+      
+      // Get current user info
+      const userResponse = await authAPI.getCurrentUser();
+      if (userResponse.success && userResponse.data.user) {
+        const user = userResponse.data.user;
+        
+        // Get user's rank if they are a student
+        let rankInfo = null;
+        if (user.role === 'student') {
+          try {
+            const rankResponse = await leaderboardAPI.getMyRank();
+            if (rankResponse.success) {
+              rankInfo = rankResponse.data;
+            }
+          } catch (error) {
+            console.log('Rank fetch error (continuing):', error);
+          }
+        }
+        
+        setUserData({
+          name: user.name || 'User',
+          playerCode: user._id ? `#${user._id.slice(-6).toUpperCase()}` : '#000000',
+          points: rankInfo ? rankInfo.statistics?.totalScore || 0 : (user.studentInfo?.totalPoints || 0),
+          region: user.region?.name || 'No Region',
+          rank: rankInfo ? `#${rankInfo.rank}` : (user.role === 'student' ? 'Unranked' : 'N/A')
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching user data:', error);
+      setUserData({
+        name: 'Error loading',
+        playerCode: '#ERROR',
+        points: 0,
+        region: 'Unknown',
+        rank: 'N/A'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
   
   // Start the rotation animation when component mounts
   useEffect(() => {
@@ -29,6 +86,7 @@ export default function HomeScreen() {
     };
     
     startRotationAnimation();
+    fetchUserData();
     
     return () => {
       // Clean up animation when component unmounts
@@ -73,18 +131,18 @@ export default function HomeScreen() {
               <FontAwesome name="user" size={20} color="#FFFFFF" />
             </View>
             <View style={styles.playerDetails}>
-              <ThemedText style={styles.playerName}>NAME</ThemedText>
-              <ThemedText style={styles.playerCode}>PLAYER CODE</ThemedText>
+              <ThemedText style={styles.playerName}>{userData.name}</ThemedText>
+              <ThemedText style={styles.playerCode}>{userData.playerCode}</ThemedText>
             </View>
           </View>
           <View style={styles.playerStats}>
             <View style={styles.points}>
-              <FontAwesome name="star" size={16} color="#dc2929" />
-              <ThemedText style={styles.statsText}>POINTS</ThemedText>
+              <FontAwesome name="trophy" size={16} color="#FFD700" />
+              <ThemedText style={styles.statsText}>Rank: {userData.rank}</ThemedText>
             </View>
             <View style={styles.region}>
               <FontAwesome name="map-marker" size={16} color="#226cae" />
-              <ThemedText style={styles.statsText}>REGION</ThemedText>
+              <ThemedText style={styles.statsText}>{userData.region}</ThemedText>
             </View>
           </View>
       </ThemedView>
@@ -259,7 +317,7 @@ export default function HomeScreen() {
           </View>
           <View style={styles.notificationContent}>
             <ThemedText style={styles.notificationTitle}>Daily Goal</ThemedText>
-            <ThemedText style={styles.notificationText}>Your position in the leaderboard is 87!</ThemedText>
+            <ThemedText style={styles.notificationText}>Your position in the leaderboard is {userData.rank}!</ThemedText>
           </View>
           <TouchableOpacity style={styles.notificationAction}>
             <FontAwesome name="arrow-right" size={16} color="#FFFFFF" />

@@ -20,9 +20,6 @@ export default function GameScreen() {
 
   const navigateToGame = (gameName: string) => {
     switch(gameName) {
-      case 'wordPuzzle':
-        navigation.navigate('GameScreen' as never);
-        break;
       case 'pronunciation':
         navigation.navigate('PronunciationGame' as never);
         break;
@@ -71,33 +68,6 @@ export default function GameScreen() {
 
         {/* Game Cards */}
         <View style={styles.gameContainer}>
-          <TouchableOpacity activeOpacity={0.8} onPress={() => navigateToGame('wordPuzzle')}>
-            <ThemedView style={styles.gameCard}>
-              <View style={styles.gameCardContent}>
-                <View style={[styles.gameIconContainer, { backgroundColor: '#dc2929' }]}>
-                  <FontAwesome name="puzzle-piece" size={32} color="#FFFFFF" />
-                </View>
-                <View style={styles.gameDetails}>
-                  <ThemedText style={styles.gameTitle}>Word Puzzle</ThemedText>
-                  <ThemedText style={styles.gameDescription}>Arrange words to form sentences</ThemedText>
-                  <View style={styles.levelContainer}>
-                    <View style={styles.levelIndicator}>
-                      <ThemedText style={styles.levelText}>Beginner</ThemedText>
-                    </View>
-                    <View style={styles.starsContainer}>
-                      <FontAwesome name="star" size={14} color="#FFD700" style={styles.starIcon} />
-                      <FontAwesome name="star" size={14} color="#FFD700" style={styles.starIcon} />
-                      <FontAwesome name="star" size={14} color="#FFD700" style={styles.starIcon} />
-                    </View>
-                  </View>
-                </View>
-              </View>
-              <View style={styles.gameCardArrow}>
-                <FontAwesome name="chevron-right" size={20} color="#666666" />
-              </View>
-            </ThemedView>
-          </TouchableOpacity>
-
           <TouchableOpacity activeOpacity={0.8} onPress={() => navigateToGame('identification')}>
             <ThemedView style={styles.gameCard}>
               <View style={styles.gameCardContent}>

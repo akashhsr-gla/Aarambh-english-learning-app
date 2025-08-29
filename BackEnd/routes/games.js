@@ -597,8 +597,8 @@ router.get('/:id/stats', authenticateToken, async (req, res) => {
   }
 });
 
-// 9. GET GAMES BY TYPE
-router.get('/type/:gameType', authenticateToken, async (req, res) => {
+// 9. GET GAMES BY TYPE (Public access for basic game data)
+router.get('/type/:gameType', async (req, res) => {
   try {
     const { difficulty, level, isPremium, page = 1, limit = 10 } = req.query;
     
@@ -641,8 +641,8 @@ router.get('/type/:gameType', authenticateToken, async (req, res) => {
   }
 });
 
-// 10. GET RANDOM GAME
-router.get('/random/:gameType', authenticateToken, async (req, res) => {
+// 10. GET RANDOM GAME (Public access for basic game data)
+router.get('/random/:gameType', async (req, res) => {
   try {
     const { difficulty, isPremium = false } = req.query;
     

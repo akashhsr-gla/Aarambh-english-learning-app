@@ -1,119 +1,111 @@
-import { StyleSheet, View, TouchableOpacity, ScrollView, FlatList, Animated } from 'react-native';
-import { useState, useRef, useEffect } from 'react';
 import { FontAwesome } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Animated, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
+import Header from '../components/Header';
 import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
-import Header from '../components/Header';
+import { authAPI, regionsAPI } from './services/api';
 
-// Define state and district types
-interface State {
-  id: number;
+// Define region types
+interface Region {
+  _id: string;
   name: string;
+  code: string;
+  description?: string;
+  isActive: boolean;
+  totalUsers?: number;
+  totalStudents?: number;
+  totalTeachers?: number;
+  averageScore?: number;
 }
 
-// Sample data for states and districts
-const STATES: State[] = [
-  { id: 1, name: 'Andhra Pradesh' },
-  { id: 2, name: 'Assam' },
-  { id: 3, name: 'Bihar' },
-  { id: 4, name: 'Chhattisgarh' },
-  { id: 5, name: 'Delhi' },
-  { id: 6, name: 'Gujarat' },
-  { id: 7, name: 'Haryana' },
-  { id: 8, name: 'Karnataka' },
-  { id: 9, name: 'Kerala' },
-  { id: 10, name: 'Madhya Pradesh' },
-  { id: 11, name: 'Maharashtra' },
-  { id: 12, name: 'Punjab' },
-  { id: 13, name: 'Rajasthan' },
-  { id: 14, name: 'Tamil Nadu' },
-  { id: 15, name: 'Telangana' },
-  { id: 16, name: 'Uttar Pradesh' },
-  { id: 17, name: 'West Bengal' },
-];
-
-// Districts mapped to state IDs
-const DISTRICTS: Record<number, string[]> = {
-  1: ['Anantapur', 'Chittoor', 'East Godavari', 'Guntur', 'Krishna', 'Kurnool', 'Prakasam', 'Srikakulam', 'Visakhapatnam'],
-  2: ['Baksa', 'Barpeta', 'Biswanath', 'Cachar', 'Darrang', 'Dhemaji', 'Dhubri', 'Dibrugarh', 'Goalpara'],
-  3: ['Araria', 'Arwal', 'Aurangabad', 'Banka', 'Begusarai', 'Bhagalpur', 'Bhojpur', 'Buxar', 'Darbhanga'],
-  4: ['Balod', 'Baloda Bazar', 'Balrampur', 'Bastar', 'Bemetara', 'Bijapur', 'Bilaspur', 'Dantewada', 'Dhamtari'],
-  5: ['Central Delhi', 'East Delhi', 'New Delhi', 'North Delhi', 'North East Delhi', 'North West Delhi', 'South Delhi'],
-  6: ['Ahmedabad', 'Amreli', 'Anand', 'Aravalli', 'Banaskantha', 'Bharuch', 'Bhavnagar', 'Botad', 'Chhota Udaipur'],
-  7: ['Ambala', 'Bhiwani', 'Charkhi Dadri', 'Faridabad', 'Fatehabad', 'Gurugram', 'Hisar', 'Jhajjar', 'Jind'],
-  8: ['Bagalkot', 'Ballari', 'Belagavi', 'Bengaluru Rural', 'Bengaluru Urban', 'Bidar', 'Chamarajanagar', 'Chikballapur'],
-  9: ['Alappuzha', 'Ernakulam', 'Idukki', 'Kannur', 'Kasaragod', 'Kollam', 'Kottayam', 'Kozhikode', 'Malappuram'],
-  10: ['Agar Malwa', 'Alirajpur', 'Anuppur', 'Ashoknagar', 'Balaghat', 'Barwani', 'Betul', 'Bhind', 'Bhopal'],
-  11: ['Ahmednagar', 'Akola', 'Amravati', 'Aurangabad', 'Beed', 'Bhandara', 'Buldhana', 'Chandrapur', 'Dhule'],
-  12: ['Amritsar', 'Barnala', 'Bathinda', 'Faridkot', 'Fatehgarh Sahib', 'Fazilka', 'Ferozepur', 'Gurdaspur', 'Hoshiarpur'],
-  13: ['Ajmer', 'Alwar', 'Banswara', 'Baran', 'Barmer', 'Bharatpur', 'Bhilwara', 'Bikaner', 'Bundi'],
-  14: ['Ariyalur', 'Chennai', 'Coimbatore', 'Cuddalore', 'Dharmapuri', 'Dindigul', 'Erode', 'Kallakurichi', 'Kanchipuram'],
-  15: ['Adilabad', 'Bhadradri Kothagudem', 'Hyderabad', 'Jagtial', 'Jangaon', 'Jayashankar Bhupalpally', 'Jogulamba Gadwal'],
-  16: ['Agra', 'Aligarh', 'Ambedkar Nagar', 'Amethi', 'Amroha', 'Auraiya', 'Ayodhya', 'Azamgarh', 'Baghpat'],
-  17: ['Alipurduar', 'Bankura', 'Birbhum', 'Cooch Behar', 'Dakshin Dinajpur', 'Darjeeling', 'Hooghly', 'Howrah', 'Jalpaiguri'],
-};
+// This will be replaced with backend data
 
 export default function RegionScreen() {
   const navigation = useNavigation();
-  const [selectedState, setSelectedState] = useState<State | null>(null);
-  const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
-  const [isStateDropdownOpen, setIsStateDropdownOpen] = useState(false);
-  const [isDistrictDropdownOpen, setIsDistrictDropdownOpen] = useState(false);
-  const stateDropdownHeight = useRef(new Animated.Value(0)).current;
-  const districtDropdownHeight = useRef(new Animated.Value(0)).current;
+  const [selectedRegion, setSelectedRegion] = useState<Region | null>(null);
+  const [regions, setRegions] = useState<Region[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownHeight = useRef(new Animated.Value(0)).current;
   
+  // Fetch regions from backend
+  useEffect(() => {
+    fetchRegions();
+  }, []);
+
   // Animation for dropdown
   useEffect(() => {
-    Animated.timing(stateDropdownHeight, {
-      toValue: isStateDropdownOpen ? 300 : 0,
+    Animated.timing(dropdownHeight, {
+      toValue: isDropdownOpen ? 300 : 0,
       duration: 300,
       useNativeDriver: false,
     }).start();
-  }, [isStateDropdownOpen]);
-  
-  useEffect(() => {
-    Animated.timing(districtDropdownHeight, {
-      toValue: isDistrictDropdownOpen ? 300 : 0,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
-  }, [isDistrictDropdownOpen]);
-  
-  const toggleStateDropdown = () => {
-    setIsStateDropdownOpen(!isStateDropdownOpen);
-    if (isDistrictDropdownOpen) {
-      setIsDistrictDropdownOpen(false);
-    }
-  };
-  
-  const toggleDistrictDropdown = () => {
-    if (selectedState) {
-      setIsDistrictDropdownOpen(!isDistrictDropdownOpen);
-      if (isStateDropdownOpen) {
-        setIsStateDropdownOpen(false);
+  }, [isDropdownOpen]);
+
+  const fetchRegions = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await regionsAPI.getAllRegions();
+      
+      if (response.success && response.data?.regions) {
+        setRegions(response.data.regions);
+      } else {
+        setError('Failed to load regions');
       }
+    } catch (err) {
+      console.error('Error fetching regions:', err);
+      setError('Network error. Please check your connection.');
+    } finally {
+      setLoading(false);
     }
   };
   
-  const selectState = (state: State) => {
-    setSelectedState(state);
-    setSelectedDistrict(null);
-    setIsStateDropdownOpen(false);
+  const toggleDropdown = () => {
+    setIsDropdownOpen(!isDropdownOpen);
   };
   
-  const selectDistrict = (district: string) => {
-    setSelectedDistrict(district);
-    setIsDistrictDropdownOpen(false);
+  const selectRegion = (region: Region) => {
+    setSelectedRegion(region);
+    setIsDropdownOpen(false);
   };
   
-  const handleSaveRegion = () => {
-    if (selectedState && selectedDistrict) {
-      // Save region logic here
-      navigation.goBack();
+  const handleSaveRegion = async () => {
+    if (selectedRegion) {
+      try {
+        // Get current user first
+        const userResponse = await authAPI.getCurrentUser();
+        if (!userResponse.success || !userResponse.data.user) {
+          Alert.alert('Error', 'Failed to get user information');
+          return;
+        }
+
+        const userId = userResponse.data.user._id;
+        
+        // Update user's region
+        const updateResponse = await authAPI.updateProfile(userId, {
+          region: selectedRegion._id
+        });
+
+        if (updateResponse.success) {
+          Alert.alert(
+            'Success', 
+            `Region updated to ${selectedRegion.name}`,
+            [{ text: 'OK', onPress: () => navigation.goBack() }]
+          );
+        } else {
+          Alert.alert('Error', updateResponse.message || 'Failed to update region');
+        }
+      } catch (error: any) {
+        console.error('Error updating region:', error);
+        Alert.alert('Error', error.message || 'Failed to update region');
+      }
     }
   };
   
@@ -141,139 +133,121 @@ export default function RegionScreen() {
             Setting your region helps us provide content relevant to your area
           </ThemedText>
         </ThemedView>
+
+        {/* Loading State */}
+        {loading && (
+          <ThemedView style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#226cae" />
+            <ThemedText style={styles.loadingText}>Loading regions...</ThemedText>
+          </ThemedView>
+        )}
+
+        {/* Error State */}
+        {error && (
+          <ThemedView style={styles.errorContainer}>
+            <FontAwesome name="exclamation-triangle" size={48} color="#dc2929" />
+            <ThemedText style={styles.errorText}>{error}</ThemedText>
+            <TouchableOpacity style={styles.retryButton} onPress={fetchRegions}>
+              <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
+            </TouchableOpacity>
+          </ThemedView>
+        )}
         
-        {/* State Selection */}
-        <ThemedView style={styles.selectionContainer}>
-          <ThemedText style={styles.sectionLabel}>State</ThemedText>
-          
-          <TouchableOpacity 
-            style={styles.dropdownToggle}
-            onPress={toggleStateDropdown}
-            activeOpacity={0.8}
-          >
-            <ThemedText style={styles.selectedText}>
-              {selectedState ? selectedState.name : 'Select your state'}
-            </ThemedText>
-            <FontAwesome 
-              name={isStateDropdownOpen ? 'chevron-up' : 'chevron-down'} 
-              size={16} 
-              color="#666666" 
-            />
-          </TouchableOpacity>
-          
-          <Animated.View style={[styles.dropdownContainer, { height: stateDropdownHeight }]}>
-            <FlatList
-              data={STATES}
-              keyExtractor={(item) => item.id.toString()}
-              renderItem={({ item }: { item: State }) => (
-                <TouchableOpacity 
-                  style={[
-                    styles.dropdownItem,
-                    selectedState?.id === item.id && styles.selectedDropdownItem
-                  ]}
-                  onPress={() => selectState(item)}
-                >
-                  <ThemedText 
-                    style={[
-                      styles.dropdownItemText,
-                      selectedState?.id === item.id && styles.selectedDropdownItemText
-                    ]}
-                  >
-                    {item.name}
-                  </ThemedText>
-                  {selectedState?.id === item.id && (
-                    <FontAwesome name="check" size={16} color="#dc2929" />
-                  )}
-                </TouchableOpacity>
-              )}
-              showsVerticalScrollIndicator={true}
-              style={styles.dropdownList}
-            />
-          </Animated.View>
-          
-          {/* District Selection */}
-          <ThemedText style={[styles.sectionLabel, { marginTop: 20 }]}>District</ThemedText>
-          
-          <TouchableOpacity 
-            style={[
-              styles.dropdownToggle,
-              !selectedState && styles.disabledDropdown
-            ]}
-            onPress={toggleDistrictDropdown}
-            activeOpacity={selectedState ? 0.8 : 1}
-            disabled={!selectedState}
-          >
-            <ThemedText 
-              style={[
-                styles.selectedText,
-                !selectedState && styles.disabledText
-              ]}
+        {/* Region Selection */}
+        {!loading && !error && (
+          <ThemedView style={styles.selectionContainer}>
+            <ThemedText style={styles.sectionLabel}>Region</ThemedText>
+            
+            <TouchableOpacity 
+              style={styles.dropdownToggle}
+              onPress={toggleDropdown}
+              activeOpacity={0.8}
             >
-              {selectedDistrict || (selectedState ? 'Select your district' : 'Please select a state first')}
-            </ThemedText>
-            {selectedState && (
+              <ThemedText style={styles.selectedText}>
+                {selectedRegion ? selectedRegion.name : 'Select your region'}
+              </ThemedText>
               <FontAwesome 
-                name={isDistrictDropdownOpen ? 'chevron-up' : 'chevron-down'} 
+                name={isDropdownOpen ? 'chevron-up' : 'chevron-down'} 
                 size={16} 
                 color="#666666" 
               />
-            )}
-          </TouchableOpacity>
-          
-          <Animated.View style={[styles.dropdownContainer, { height: districtDropdownHeight }]}>
-            {selectedState && (
-              <FlatList
-                data={DISTRICTS[selectedState.id]}
-                keyExtractor={(item) => item}
-                renderItem={({ item }: { item: string }) => (
+            </TouchableOpacity>
+            
+            <Animated.View style={[styles.dropdownContainer, { height: dropdownHeight }]}>
+              <ScrollView showsVerticalScrollIndicator={true} style={styles.dropdownList}>
+                {regions.map((item) => (
                   <TouchableOpacity 
+                    key={item._id}
                     style={[
                       styles.dropdownItem,
-                      selectedDistrict === item && styles.selectedDropdownItem
+                      selectedRegion?._id === item._id && styles.selectedDropdownItem
                     ]}
-                    onPress={() => selectDistrict(item)}
+                    onPress={() => selectRegion(item)}
                   >
-                    <ThemedText 
-                      style={[
-                        styles.dropdownItemText,
-                        selectedDistrict === item && styles.selectedDropdownItemText
-                      ]}
-                    >
-                      {item}
-                    </ThemedText>
-                    {selectedDistrict === item && (
+                    <View style={styles.dropdownItemContent}>
+                      <ThemedText 
+                        style={[
+                          styles.dropdownItemText,
+                          selectedRegion?._id === item._id && styles.selectedDropdownItemText
+                        ]}
+                      >
+                        {item.name}
+                      </ThemedText>
+                      {item.description && (
+                        <ThemedText style={styles.dropdownItemDescription}>
+                          {item.description}
+                        </ThemedText>
+                      )}
+                    </View>
+                    {selectedRegion?._id === item._id && (
                       <FontAwesome name="check" size={16} color="#dc2929" />
                     )}
                   </TouchableOpacity>
-                )}
-                showsVerticalScrollIndicator={true}
-                style={styles.dropdownList}
-              />
-            )}
-          </Animated.View>
-        </ThemedView>
+                ))}
+              </ScrollView>
+            </Animated.View>
+          </ThemedView>
+        )}
         
         {/* Map Preview */}
-        <ThemedView style={styles.mapPreview}>
-          <FontAwesome name="map" size={60} color="#226cae" />
-          <ThemedText style={styles.mapPlaceholderText}>
-            {selectedState && selectedDistrict 
-              ? `${selectedDistrict}, ${selectedState.name}`
-              : 'Map preview will appear here'}
-          </ThemedText>
-        </ThemedView>
+        {!loading && !error && (
+          <ThemedView style={styles.mapPreview}>
+            <FontAwesome name="map" size={60} color="#226cae" />
+            <ThemedText style={styles.mapPlaceholderText}>
+              {selectedRegion 
+                ? `${selectedRegion.name} - ${selectedRegion.code}`
+                : 'Region preview will appear here'}
+            </ThemedText>
+            {selectedRegion && selectedRegion.totalUsers && (
+              <View style={styles.regionStats}>
+                <View style={styles.statItem}>
+                  <FontAwesome name="users" size={14} color="#226cae" />
+                  <ThemedText style={styles.statText}>{selectedRegion.totalUsers} users</ThemedText>
+                </View>
+                {selectedRegion.averageScore && (
+                  <View style={styles.statItem}>
+                    <FontAwesome name="star" size={14} color="#FFD700" />
+                    <ThemedText style={styles.statText}>{selectedRegion.averageScore.toFixed(1)} avg score</ThemedText>
+                  </View>
+                )}
+              </View>
+            )}
+          </ThemedView>
+        )}
         
         {/* Save Button */}
-        <TouchableOpacity 
-          style={[
-            styles.saveButton,
-            (!selectedState || !selectedDistrict) && styles.disabledButton
-          ]}
-          onPress={handleSaveRegion}
-          disabled={!selectedState || !selectedDistrict}
-        >
-          <ThemedText style={styles.saveButtonText}>Save Region</ThemedText>
-        </TouchableOpacity>
+        {!loading && !error && (
+          <TouchableOpacity 
+            style={[
+              styles.saveButton,
+              !selectedRegion && styles.disabledButton
+            ]}
+            onPress={handleSaveRegion}
+            disabled={!selectedRegion}
+          >
+            <ThemedText style={styles.saveButtonText}>Save Region</ThemedText>
+          </TouchableOpacity>
+        )}
       </ScrollView>
     </View>
   );
@@ -433,5 +407,77 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '600',
+  },
+  loadingContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 15,
+    padding: 40,
+    marginBottom: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  loadingText: {
+    marginTop: 15,
+    fontSize: 16,
+    color: '#666666',
+  },
+  errorContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 15,
+    padding: 40,
+    marginBottom: 20,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    borderLeftWidth: 4,
+    borderLeftColor: '#dc2929',
+  },
+  errorText: {
+    marginTop: 15,
+    fontSize: 16,
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: '#dc2929',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  dropdownItemContent: {
+    flex: 1,
+  },
+  dropdownItemDescription: {
+    fontSize: 12,
+    color: '#999999',
+    marginTop: 2,
+  },
+  regionStats: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 15,
+    gap: 20,
+  },
+  statItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  statText: {
+    fontSize: 12,
+    color: '#666666',
   },
 }); 
