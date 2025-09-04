@@ -67,6 +67,10 @@ function RootLayoutNav() {
         <Stack.Screen name="GroupWaitingRoom" options={{ headerShown: false }} />
         <Stack.Screen name="GroupChatScreen" options={{ headerShown: false }} />
         <Stack.Screen name="GroupVideoCallScreen" options={{ headerShown: false }} />
+        <Stack.Screen name="ProfileScreen" options={{ headerShown: false }} />
+        <Stack.Screen name="SubscriptionScreen" options={{ headerShown: false }} />
+        <Stack.Screen name="SessionsScreen" options={{ headerShown: false }} />
+        <Stack.Screen name="TeacherDashboard" options={{ headerShown: false }} />
       </Stack>
     </ThemeProvider>
   );
