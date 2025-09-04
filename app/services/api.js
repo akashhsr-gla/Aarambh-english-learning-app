@@ -436,6 +436,67 @@ export const referralsAPI = {
       body: JSON.stringify({ referralCode }),
     });
   },
+
+  // Get teacher's referrals (for teacher dashboard)
+  getTeacherReferrals: async (teacherId = null) => {
+    // If no teacherId provided, we need to get current user ID first
+    if (!teacherId) {
+      const currentUser = await authAPI.getCurrentUser();
+      teacherId = currentUser.data._id;
+    }
+    return await apiRequest(`/referrals/teacher/${teacherId}`);
+  },
+
+  // Get referral statistics
+  getReferralStatistics: async () => {
+    return await apiRequest('/referrals/admin/statistics');
+  },
+};
+
+// Teacher API (for dashboard functionality)
+export const teacherAPI = {
+  // Get teacher dashboard data
+  getDashboardData: async () => {
+    const currentUser = await authAPI.getCurrentUser();
+    const teacherId = currentUser.data._id;
+    return await apiRequest(`/referrals/teacher/${teacherId}`);
+  },
+
+  // Get teacher's earnings and claims
+  getEarnings: async () => {
+    const currentUser = await authAPI.getCurrentUser();
+    const teacherId = currentUser.data._id;
+    const response = await apiRequest(`/referrals/teacher/${teacherId}`);
+    return response;
+  },
+
+  // Submit earnings claim (placeholder - would need backend implementation)
+  submitClaim: async (claimData) => {
+    // This would need a proper backend endpoint for claims
+    // For now, return a mock success response
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        resolve({
+          success: true,
+          message: 'Claim submitted successfully',
+          data: { claimId: 'CLAIM_' + Date.now() }
+        });
+      }, 1000);
+    });
+  },
+
+  // Get students referred by teacher
+  getReferredStudents: async () => {
+    const currentUser = await authAPI.getCurrentUser();
+    const teacherId = currentUser.data._id;
+    const response = await apiRequest(`/referrals/teacher/${teacherId}`);
+    return response.data?.referrals || [];
+  },
+
+  // Get teacher's transaction history (from referrals)
+  getTransactionHistory: async (page = 1, limit = 20) => {
+    return await apiRequest(`/transactions/history?page=${page}&limit=${limit}&type=referral`);
+  },
 };
 
 // Groups API
@@ -521,5 +582,6 @@ export default {
   plans: plansAPI,
   transactions: transactionsAPI,
   referrals: referralsAPI,
+  teacher: teacherAPI,
   groups: groupsAPI,
 };

@@ -33,13 +33,14 @@ interface GroupInfo {
 interface RouteParams {
   groupInfo: GroupInfo;
   participants: Participant[];
+  groupId?: string;
   isVoiceOnly?: boolean;
 }
 
 export default function GroupVideoCallScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { groupInfo, participants: routeParticipants, isVoiceOnly = false } = (route.params as RouteParams) || {};
+  const { groupInfo, participants: routeParticipants, groupId, isVoiceOnly = false } = (route.params as RouteParams) || {};
   
   const [participants] = useState<Participant[]>(routeParticipants || [
     { id: '1', name: 'You', isHost: true, isMuted: false, hasVideo: !isVoiceOnly },

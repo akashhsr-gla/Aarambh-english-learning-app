@@ -18,6 +18,7 @@ import {
 import GameHeader from '../components/GameHeader';
 import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
+import { groupsAPI } from './services/api';
 
 const { width, height } = Dimensions.get('window');
 
@@ -54,25 +55,8 @@ interface RouteParams {
   groupId?: string;
 }
 
-// Sample messages
-const initialMessages: Message[] = [
-  {
-    id: 'system-1',
-    senderId: 'system',
-    senderName: 'System',
-    text: 'Welcome to the group discussion! Please be respectful and enjoy the conversation.',
-    timestamp: new Date(),
-    isSystemMessage: true
-  },
-  {
-    id: 'system-2',
-    senderId: 'system',
-    senderName: 'System',
-    text: 'Topic: Daily Routines and Habits',
-    timestamp: new Date(),
-    isSystemMessage: true
-  }
-];
+// Initial empty messages - will be loaded from backend
+const initialMessages: Message[] = [];
 
 // Sample participant data if not provided
 const defaultParticipants: Participant[] = [
@@ -91,20 +75,68 @@ export default function GroupChatScreen() {
   const [inputText, setInputText] = useState('');
   const [showParticipants, setShowParticipants] = useState(false);
   const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [sendingMessage, setSendingMessage] = useState(false);
   
   const scrollViewRef = useRef<ScrollView>(null);
   
-  // Sample responses for demo purposes
-  const sampleResponses = [
-    "I usually wake up at 6 AM and go for a run before work.",
-    "I find it helpful to prepare my meals for the week on Sunday.",
-    "Reading before bed helps me sleep better at night.",
-    "I've been trying to reduce my screen time in the evenings.",
-    "What's your morning routine like?",
-    "Do you have any tips for staying productive throughout the day?",
-    "I struggle with maintaining a consistent exercise routine.",
-    "How do you balance work and personal time?"
-  ];
+  // Load messages from backend
+  const loadMessages = async () => {
+    if (!groupId) {
+      setError('Group ID is required');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setError(null);
+      const response = await groupsAPI.getMessages(groupId);
+      const backendMessages = response.data.messages.map((msg: any) => ({
+        id: msg._id,
+        senderId: msg.sender._id || msg.sender,
+        senderName: msg.sender.name || 'Unknown',
+        text: msg.message,
+        timestamp: new Date(msg.timestamp),
+        isSystemMessage: msg.isSystemMessage || false
+      }));
+      setMessages(backendMessages);
+    } catch (err: any) {
+      console.error('Error loading messages:', err);
+      setError(err.message || 'Failed to load messages');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Send message to backend
+  const sendMessageToBackend = async (messageText: string) => {
+    if (!groupId || !messageText.trim()) return;
+
+    try {
+      setSendingMessage(true);
+      const response = await groupsAPI.sendMessage(groupId, messageText.trim());
+      
+      // Add the new message to local state
+      const newMessage: Message = {
+        id: response.data.messageId,
+        senderId: response.data.sender.id,
+        senderName: response.data.sender.name,
+        text: messageText.trim(),
+        timestamp: new Date(response.data.timestamp),
+        isSystemMessage: false
+      };
+      
+      setMessages(prev => [...prev, newMessage]);
+      setInputText('');
+      
+    } catch (err: any) {
+      console.error('Error sending message:', err);
+      Alert.alert('Error', err.message || 'Failed to send message');
+    } finally {
+      setSendingMessage(false);
+    }
+  };
   
   // Listen for keyboard events
   useEffect(() => {
@@ -128,30 +160,10 @@ export default function GroupChatScreen() {
     };
   }, []);
   
-  // Simulate other participants sending messages
+  // Load messages when component mounts
   useEffect(() => {
-    const messageIntervals = participants
-      .filter(p => p.id !== '1') // Exclude the user
-      .map(participant => {
-        return setInterval(() => {
-          const randomResponse = sampleResponses[Math.floor(Math.random() * sampleResponses.length)];
-          const newMessage: Message = {
-            id: `msg-${Date.now()}-${participant.id}`,
-            senderId: participant.id,
-            senderName: participant.name,
-            text: randomResponse,
-            timestamp: new Date()
-          };
-          
-          setMessages(prev => [...prev, newMessage]);
-          scrollToBottom();
-        }, Math.random() * 20000 + 10000); // Random interval between 10-30 seconds
-      });
-      
-    return () => {
-      messageIntervals.forEach(interval => clearInterval(interval));
-    };
-  }, [participants]);
+    loadMessages();
+  }, [groupId]);
   
   const scrollToBottom = () => {
     setTimeout(() => {
@@ -159,19 +171,10 @@ export default function GroupChatScreen() {
     }, 100);
   };
   
-  const handleSendMessage = () => {
-    if (!inputText.trim()) return;
+  const handleSendMessage = async () => {
+    if (!inputText.trim() || sendingMessage) return;
     
-    const newMessage: Message = {
-      id: `msg-${Date.now()}-user`,
-      senderId: '1', // User ID
-      senderName: 'You',
-      text: inputText.trim(),
-      timestamp: new Date()
-    };
-    
-    setMessages([...messages, newMessage]);
-    setInputText('');
+    await sendMessageToBackend(inputText.trim());
     scrollToBottom();
   };
   
@@ -194,6 +197,56 @@ export default function GroupChatScreen() {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
   
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <LinearGradient
+          colors={['rgba(220, 41, 41, 0.2)', 'rgba(255, 255, 255, 1)', 'rgba(255, 255, 255, 1)', 'rgba(34, 108, 174, 0.1)']}
+          locations={[0, 0.25, 0.75, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.gradientBackground}
+        />
+        <GameHeader 
+          title={groupInfo?.title || "Group Discussion"} 
+          showBackButton 
+          onBackPress={() => navigation.goBack()} 
+        />
+        <View style={[styles.container, styles.centerContent]}>
+          <FontAwesome name="spinner" size={50} color="#dc2929" />
+          <ThemedText style={styles.loadingText}>Loading messages...</ThemedText>
+        </View>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <LinearGradient
+          colors={['rgba(220, 41, 41, 0.2)', 'rgba(255, 255, 255, 1)', 'rgba(255, 255, 255, 1)', 'rgba(34, 108, 174, 0.1)']}
+          locations={[0, 0.25, 0.75, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.gradientBackground}
+        />
+        <GameHeader 
+          title={groupInfo?.title || "Group Discussion"} 
+          showBackButton 
+          onBackPress={() => navigation.goBack()} 
+        />
+        <View style={[styles.container, styles.centerContent]}>
+          <FontAwesome name="exclamation-triangle" size={50} color="#dc2929" />
+          <ThemedText style={styles.errorText}>Error Loading Messages</ThemedText>
+          <ThemedText style={styles.errorSubtext}>{error}</ThemedText>
+          <TouchableOpacity style={styles.retryButton} onPress={loadMessages}>
+            <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <LinearGradient
@@ -302,11 +355,15 @@ export default function GroupChatScreen() {
             placeholderTextColor="#999999"
           />
           <TouchableOpacity 
-            style={[styles.sendButton, !inputText.trim() && styles.disabledButton]}
+            style={[styles.sendButton, (!inputText.trim() || sendingMessage) && styles.disabledButton]}
             onPress={handleSendMessage}
-            disabled={!inputText.trim()}
+            disabled={!inputText.trim() || sendingMessage}
           >
-            <FontAwesome name="paper-plane" size={20} color="#FFFFFF" />
+            {sendingMessage ? (
+              <FontAwesome name="spinner" size={20} color="#FFFFFF" />
+            ) : (
+              <FontAwesome name="paper-plane" size={20} color="#FFFFFF" />
+            )}
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
@@ -318,6 +375,42 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  centerContent: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666666',
+    marginTop: 12,
+  },
+  errorText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#dc2929',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  errorSubtext: {
+    fontSize: 14,
+    color: '#999999',
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: '#226cae',
+    borderRadius: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 16,
   },
   gradientBackground: {
     position: 'absolute',

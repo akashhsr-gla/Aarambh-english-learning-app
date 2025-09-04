@@ -7,6 +7,7 @@ import { ActivityIndicator, Alert, ScrollView, StyleSheet, TouchableOpacity, Vie
 import GameHeader from '../components/GameHeader';
 import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
+import { groupsAPI } from './services/api';
 
 // Define the types for route params
 interface GroupInfo {
@@ -20,6 +21,8 @@ interface GroupInfo {
 
 interface RouteParams {
   groupInfo: GroupInfo;
+  groupId?: string;
+  sessionType?: 'chat' | 'voice' | 'video';
 }
 
 // Mock participant data
@@ -32,91 +35,107 @@ const mockParticipants = [
 export default function GroupWaitingRoom() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { groupInfo } = (route.params as RouteParams) || { groupInfo: null };
+  const { groupInfo, groupId, sessionType = 'chat' } = (route.params as RouteParams) || { groupInfo: null };
   
   const [participants, setParticipants] = useState(mockParticipants);
   const [isGroupCodeCopied, setIsGroupCodeCopied] = useState(false);
   const [timeWaiting, setTimeWaiting] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [groupDetails, setGroupDetails] = useState<any | null>(null);
   
-  // Simulate participants joining over time
+  // Load group details and participants from backend
+  const loadGroupDetails = async () => {
+    if (!groupId) {
+      setError('Group ID is required');
+      setLoading(false);
+      return;
+    }
+
+    try {
+      setError(null);
+      const response = await groupsAPI.getGroupDetails(groupId);
+      const group = response.data;
+      
+      setGroupDetails(group);
+      
+      // Transform backend participants to frontend format
+      const backendParticipants = group.participants.map((p: any) => ({
+        id: p.user._id || p.user,
+        name: p.user.name || 'Unknown',
+        avatar: p.user.profilePicture || null,
+        isHost: p.role === 'host',
+        isReady: p.isActive // Use isActive as ready status
+      }));
+      
+      setParticipants(backendParticipants);
+    } catch (err: any) {
+      console.error('Error loading group details:', err);
+      setError(err.message || 'Failed to load group details');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeWaiting(prev => prev + 1);
-      
-      // Simulate a new participant joining after 5 seconds
-      if (timeWaiting === 5 && participants.length < groupInfo.maxParticipants) {
-        const newParticipant = {
-          id: '4',
-          name: 'Emma Wilson',
-          avatar: null,
-          isHost: false,
-          isReady: false
-        };
-        setParticipants([...participants, newParticipant]);
-      }
-      
-      // Simulate a participant getting ready after 10 seconds
-      if (timeWaiting === 10) {
-        setParticipants(prev => 
-          prev.map(p => 
-            p.id === '2' ? { ...p, isReady: true } : p
-          )
-        );
-      }
-      
-      // Simulate another participant joining after 15 seconds
-      if (timeWaiting === 15 && participants.length < groupInfo.maxParticipants) {
-        const newParticipant = {
-          id: '5',
-          name: 'David Lee',
-          avatar: null,
-          isHost: false,
-          isReady: true
-        };
-        setParticipants([...participants, newParticipant]);
-      }
-    }, 1000);
+    loadGroupDetails();
     
-    return () => clearInterval(timer);
-  }, [timeWaiting, participants, groupInfo]);
+    // Set up polling to refresh group details every 5 seconds
+    const interval = setInterval(loadGroupDetails, 5000);
+    
+    return () => clearInterval(interval);
+  }, [groupId]);
   
   const handleCopyCode = () => {
     setIsGroupCodeCopied(true);
     setTimeout(() => setIsGroupCodeCopied(false), 2000);
   };
   
-  const handleStartDiscussion = (mode: 'chat' | 'voice' | 'video' = 'chat') => {
+  const handleStartDiscussion = async (mode: 'chat' | 'voice' | 'video' = 'chat') => {
     const readyParticipants = participants.filter(p => p.isReady);
     
-    if (readyParticipants.length < 3) {
+    if (readyParticipants.length < 2) {
       Alert.alert(
         'Not Enough Participants',
-        'You need at least 3 ready participants to start the discussion.',
+        'You need at least 2 ready participants to start the discussion.',
         [{ text: 'OK' }]
       );
       return;
     }
-    
-    // Navigate to the appropriate screen based on mode
-    if (mode === 'chat') {
-      // @ts-ignore
-      navigation.navigate('GroupChatScreen', { 
-        groupInfo, 
-        participants: readyParticipants 
-      });
-    } else if (mode === 'voice') {
-      // @ts-ignore
-      navigation.navigate('GroupVideoCallScreen', { 
-        groupInfo, 
-        participants: readyParticipants,
-        isVoiceOnly: true
-      });
-    } else if (mode === 'video') {
-      // @ts-ignore
-      navigation.navigate('GroupVideoCallScreen', { 
-        groupInfo, 
-        participants: readyParticipants 
-      });
+
+    try {
+      if (mode !== 'chat') {
+        // Start voice/video session via backend
+        await groupsAPI.startSession(groupId, mode);
+      }
+      
+      // Navigate to the appropriate screen based on mode
+      if (mode === 'chat') {
+        // @ts-ignore
+        navigation.navigate('GroupChatScreen', { 
+          groupInfo, 
+          participants: readyParticipants,
+          groupId
+        });
+      } else if (mode === 'voice') {
+        // @ts-ignore
+        navigation.navigate('GroupVideoCallScreen', { 
+          groupInfo, 
+          participants: readyParticipants,
+          groupId,
+          isVoiceOnly: true
+        });
+      } else if (mode === 'video') {
+        // @ts-ignore
+        navigation.navigate('GroupVideoCallScreen', { 
+          groupInfo, 
+          participants: readyParticipants,
+          groupId
+        });
+      }
+    } catch (error: any) {
+      console.error('Error starting session:', error);
+      Alert.alert('Error', error.message || 'Failed to start session');
     }
   };
   
@@ -135,7 +154,7 @@ export default function GroupWaitingRoom() {
     );
   };
   
-  if (!groupInfo) {
+  if (!groupInfo && !groupId) {
     return (
       <View style={[styles.container, styles.centerContent]}>
         <ThemedText>Invalid group information</ThemedText>
@@ -145,6 +164,48 @@ export default function GroupWaitingRoom() {
         >
           <ThemedText style={styles.backButtonText}>Go Back</ThemedText>
         </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (loading) {
+    return (
+      <View style={styles.container}>
+        <LinearGradient
+          colors={['rgba(220, 41, 41, 0.2)', 'rgba(255, 255, 255, 1)', 'rgba(255, 255, 255, 1)', 'rgba(34, 108, 174, 0.1)']}
+          locations={[0, 0.25, 0.75, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.gradientBackground}
+        />
+        <GameHeader title="Waiting Room" showBackButton onBackPress={() => navigation.goBack()} />
+        <View style={[styles.container, styles.centerContent]}>
+          <ActivityIndicator size="large" color="#dc2929" />
+          <ThemedText style={styles.loadingText}>Loading group details...</ThemedText>
+        </View>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <LinearGradient
+          colors={['rgba(220, 41, 41, 0.2)', 'rgba(255, 255, 255, 1)', 'rgba(255, 255, 255, 1)', 'rgba(34, 108, 174, 0.1)']}
+          locations={[0, 0.25, 0.75, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.gradientBackground}
+        />
+        <GameHeader title="Waiting Room" showBackButton onBackPress={() => navigation.goBack()} />
+        <View style={[styles.container, styles.centerContent]}>
+          <FontAwesome name="exclamation-triangle" size={50} color="#dc2929" />
+          <ThemedText style={styles.errorText}>Error Loading Group</ThemedText>
+          <ThemedText style={styles.errorSubtext}>{error}</ThemedText>
+          <TouchableOpacity style={styles.retryButton} onPress={loadGroupDetails}>
+            <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -198,7 +259,9 @@ export default function GroupWaitingRoom() {
           </View>
           
           <View style={styles.codeContainer}>
-            <ThemedText style={styles.groupCode}>ABCD1234</ThemedText>
+            <ThemedText style={styles.groupCode}>
+              {groupDetails?.groupSession?.joinCode || 'Loading...'}
+            </ThemedText>
             <TouchableOpacity 
               style={styles.copyButton}
               onPress={handleCopyCode}
@@ -214,7 +277,7 @@ export default function GroupWaitingRoom() {
         <ThemedView style={styles.participantsCard}>
           <View style={styles.participantsHeader}>
             <ThemedText style={styles.participantsTitle}>
-              Participants ({participants.length}/{groupInfo.maxParticipants})
+              Participants ({participants.length}/{groupDetails?.groupSession?.maxParticipants || groupInfo?.maxParticipants || 5})
             </ThemedText>
             <ThemedText style={styles.readyText}>
               {readyCount} ready
@@ -252,7 +315,7 @@ export default function GroupWaitingRoom() {
             ))}
             
             {/* Empty slots */}
-            {Array.from({ length: groupInfo.maxParticipants - participants.length }).map((_, index) => (
+            {Array.from({ length: (groupDetails?.groupSession?.maxParticipants || groupInfo?.maxParticipants || 5) - participants.length }).map((_, index) => (
               <View key={`empty-${index}`} style={styles.emptyParticipantItem}>
                 <View style={styles.participantInfo}>
                   <View style={styles.emptyAvatarCircle}>
@@ -326,6 +389,37 @@ const styles = StyleSheet.create({
   centerContent: {
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666666',
+    marginTop: 12,
+  },
+  errorText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#dc2929',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  errorSubtext: {
+    fontSize: 14,
+    color: '#999999',
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: '#226cae',
+    borderRadius: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 16,
   },
   gradientBackground: {
     position: 'absolute',

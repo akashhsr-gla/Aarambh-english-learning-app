@@ -2,89 +2,165 @@ import { FontAwesome } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import React, { useState } from 'react';
-import { Alert, Dimensions, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { Alert, Dimensions, ScrollView, StyleSheet, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 
 import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
+import { teacherAPI, authAPI } from './services/api';
 
 const { width, height } = Dimensions.get('window');
 
-// Sample data for teacher dashboard
-const TEACHER_DATA = {
-  name: "John Smith",
-  email: "john.smith@example.com",
-  referralCode: "TEACH123",
-  totalEarnings: 12500,
-  pendingClaims: 2500,
-  claimableAmount: 3500,
+// Default/loading data structure
+const DEFAULT_TEACHER_DATA = {
+  name: "",
+  email: "",
+  referralCode: "",
+  totalEarnings: 0,
+  pendingClaims: 0,
+  claimableAmount: 0,
 };
-
-// Sample student data
-const STUDENTS_DATA = [
-  {
-    id: 1,
-    name: "Aisha Patel",
-    joinDate: "15 Jun 2023",
-    completedLessons: 42,
-    status: "active",
-    earnings: 1200,
-  },
-  {
-    id: 2,
-    name: "Michael Chen",
-    joinDate: "23 Jul 2023",
-    completedLessons: 36,
-    status: "active",
-    earnings: 950,
-  },
-  {
-    id: 3,
-    name: "Priya Sharma",
-    joinDate: "05 Aug 2023",
-    completedLessons: 28,
-    status: "active",
-    earnings: 800,
-  },
-  {
-    id: 4,
-    name: "David Wilson",
-    joinDate: "12 Sep 2023",
-    completedLessons: 18,
-    status: "inactive",
-    earnings: 550,
-  },
-  {
-    id: 5,
-    name: "Sophia Rodriguez",
-    joinDate: "30 Sep 2023",
-    completedLessons: 12,
-    status: "active",
-    earnings: 350,
-  },
-];
 
 export default function TeacherDashboard() {
   const navigation = useNavigation();
   const [showReferralCode, setShowReferralCode] = useState(false);
   const [isClaimSubmitted, setIsClaimSubmitted] = useState(false);
+  const [teacherData, setTeacherData] = useState(DEFAULT_TEACHER_DATA);
+  const [studentsData, setStudentsData] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [claimLoading, setClaimLoading] = useState(false);
+
+  // Load teacher dashboard data
+  const loadDashboardData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Get current user info first
+      const userResponse = await authAPI.getCurrentUser();
+      const currentUser = userResponse.data;
+
+      // Get teacher referral data and statistics
+      const teacherResponse = await teacherAPI.getDashboardData();
+      const referralData = teacherResponse.data;
+
+      // Calculate earnings based on referral data
+      const referrals = referralData.referrals || [];
+      const statistics = referralData.statistics || {};
+      
+      // Calculate total earnings (simplified calculation - actual formula may vary)
+      const totalUses = statistics.totalUses || 0;
+      const avgEarningsPerReferral = 500; // This should come from backend configuration
+      const totalEarnings = totalUses * avgEarningsPerReferral;
+      const claimableAmount = Math.floor(totalEarnings * 0.3); // 30% can be claimed
+      const pendingClaims = Math.floor(totalEarnings * 0.1); // 10% pending
+
+      setTeacherData({
+        name: currentUser.name,
+        email: currentUser.email,
+        referralCode: currentUser.teacherInfo?.referralCode || 'N/A',
+        totalEarnings,
+        pendingClaims,
+        claimableAmount,
+      });
+
+      // Transform referrals into students data
+      const students = referrals.map((referral: any, index: number) => ({
+        id: index + 1,
+        name: referral.usedBy?.name || 'Unknown Student',
+        joinDate: new Date(referral.createdAt).toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric'
+        }),
+        completedLessons: Math.floor(Math.random() * 50) + 10, // Mock data - should come from backend
+        status: referral.isActive ? 'active' : 'inactive',
+        earnings: avgEarningsPerReferral,
+      }));
+
+      setStudentsData(students);
+
+    } catch (err: any) {
+      console.error('Error loading dashboard data:', err);
+      setError(err.message || 'Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
 
   const formatCurrency = (amount: number) => {
     return "₹" + amount.toLocaleString('en-IN');
   };
 
-  const handleClaim = () => {
-    Alert.alert(
-      "Claim Submitted",
-      "Your claim for " + formatCurrency(TEACHER_DATA.claimableAmount) + " has been submitted. Our team will contact you shortly at your registered phone number.",
-      [{ text: "OK", onPress: () => setIsClaimSubmitted(true) }]
-    );
+  const handleClaim = async () => {
+    if (claimLoading || teacherData.claimableAmount === 0) return;
+
+    try {
+      setClaimLoading(true);
+      
+      const claimData = {
+        amount: teacherData.claimableAmount,
+        type: 'referral_earnings',
+        teacherId: (await authAPI.getCurrentUser()).data._id
+      };
+
+      await teacherAPI.submitClaim(claimData);
+
+      Alert.alert(
+        "Claim Submitted",
+        `Your claim for ${formatCurrency(teacherData.claimableAmount)} has been submitted. Our team will contact you shortly at your registered phone number.`,
+        [{ 
+          text: "OK", 
+          onPress: () => {
+            setIsClaimSubmitted(true);
+            // Update local state to reflect claim submission
+            setTeacherData(prev => ({
+              ...prev,
+              pendingClaims: prev.pendingClaims + prev.claimableAmount,
+              claimableAmount: 0
+            }));
+          }
+        }]
+      );
+    } catch (error: any) {
+      console.error('Error submitting claim:', error);
+      Alert.alert('Error', error.message || 'Failed to submit claim');
+    } finally {
+      setClaimLoading(false);
+    }
   };
 
   const handleLogout = () => {
     // Navigate back to login screen
     navigation.navigate('LoginScreen' as never);
   };
+
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <ActivityIndicator size="large" color="#226cae" />
+        <ThemedText style={styles.loadingText}>Loading dashboard...</ThemedText>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={[styles.container, styles.centerContent]}>
+        <FontAwesome name="exclamation-triangle" size={50} color="#dc2929" />
+        <ThemedText style={styles.errorText}>Error Loading Dashboard</ThemedText>
+        <ThemedText style={styles.errorSubtext}>{error}</ThemedText>
+        <TouchableOpacity style={styles.retryButton} onPress={loadDashboardData}>
+          <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -101,8 +177,8 @@ export default function TeacherDashboard() {
               <FontAwesome name="user" size={24} color="#FFFFFF" />
             </View>
             <View>
-              <ThemedText style={styles.headerName}>{TEACHER_DATA.name}</ThemedText>
-              <ThemedText style={styles.headerEmail}>{TEACHER_DATA.email}</ThemedText>
+              <ThemedText style={styles.headerName}>{teacherData.name}</ThemedText>
+              <ThemedText style={styles.headerEmail}>{teacherData.email}</ThemedText>
             </View>
           </View>
         </View>
@@ -127,7 +203,7 @@ export default function TeacherDashboard() {
           
           <View style={styles.referralCodeContainer}>
             <ThemedText style={styles.referralCode}>
-              {showReferralCode ? TEACHER_DATA.referralCode : "••••••••"}
+              {showReferralCode ? teacherData.referralCode : "••••••••"}
             </ThemedText>
             <TouchableOpacity style={styles.copyButton}>
               <FontAwesome name="copy" size={20} color="#226cae" />
@@ -145,18 +221,18 @@ export default function TeacherDashboard() {
           
           <View style={styles.earningsGrid}>
             <View style={styles.earningsItem}>
-              <ThemedText style={styles.earningsValue}>{formatCurrency(TEACHER_DATA.totalEarnings)}</ThemedText>
+              <ThemedText style={styles.earningsValue}>{formatCurrency(teacherData.totalEarnings)}</ThemedText>
               <ThemedText style={styles.earningsLabel}>Total Earnings</ThemedText>
             </View>
             
             <View style={styles.earningsItem}>
-              <ThemedText style={styles.earningsValue}>{formatCurrency(TEACHER_DATA.pendingClaims)}</ThemedText>
+              <ThemedText style={styles.earningsValue}>{formatCurrency(teacherData.pendingClaims)}</ThemedText>
               <ThemedText style={styles.earningsLabel}>Pending Claims</ThemedText>
             </View>
             
             <View style={[styles.earningsItem, styles.highlightedEarningsItem]}>
               <ThemedText style={[styles.earningsValue, styles.highlightedEarningsValue]}>
-                {formatCurrency(TEACHER_DATA.claimableAmount)}
+                {formatCurrency(teacherData.claimableAmount)}
               </ThemedText>
               <ThemedText style={styles.earningsLabel}>Available to Claim</ThemedText>
             </View>
@@ -165,14 +241,18 @@ export default function TeacherDashboard() {
           <TouchableOpacity 
             style={[
               styles.claimButton,
-              isClaimSubmitted && styles.disabledClaimButton
+              (isClaimSubmitted || claimLoading || teacherData.claimableAmount === 0) && styles.disabledClaimButton
             ]}
             onPress={handleClaim}
-            disabled={isClaimSubmitted || TEACHER_DATA.claimableAmount === 0}
+            disabled={isClaimSubmitted || claimLoading || teacherData.claimableAmount === 0}
           >
-            <FontAwesome name="money" size={18} color="#FFFFFF" style={styles.claimButtonIcon} />
+            {claimLoading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" style={styles.claimButtonIcon} />
+            ) : (
+              <FontAwesome name="money" size={18} color="#FFFFFF" style={styles.claimButtonIcon} />
+            )}
             <ThemedText style={styles.claimButtonText}>
-              {isClaimSubmitted ? "Claim Submitted" : "Claim Earnings"}
+              {claimLoading ? "Submitting..." : isClaimSubmitted ? "Claim Submitted" : "Claim Earnings"}
             </ThemedText>
           </TouchableOpacity>
         </ThemedView>
@@ -181,10 +261,19 @@ export default function TeacherDashboard() {
         <ThemedView style={styles.studentsContainer}>
           <ThemedText style={styles.sectionTitle}>Your Students</ThemedText>
           <ThemedText style={styles.sectionSubtitle}>
-            {STUDENTS_DATA.length} students referred by you
+            {studentsData.length} students referred by you
           </ThemedText>
           
-          {STUDENTS_DATA.map(student => (
+          {studentsData.length === 0 ? (
+            <View style={styles.emptyStudentsContainer}>
+              <FontAwesome name="users" size={50} color="#CCCCCC" />
+              <ThemedText style={styles.emptyStudentsText}>No students yet</ThemedText>
+              <ThemedText style={styles.emptyStudentsSubtext}>
+                Share your referral code to start earning
+              </ThemedText>
+            </View>
+          ) : (
+            studentsData.map(student => (
             <View key={student.id} style={styles.studentCard}>
               <View style={styles.studentInfo}>
                 <View style={styles.studentAvatar}>
@@ -216,7 +305,8 @@ export default function TeacherDashboard() {
                 </View>
               </View>
             </View>
-          ))}
+            ))
+          )}
         </ThemedView>
         
         {/* Logout Button */}
@@ -233,6 +323,59 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F7FA',
+  },
+  centerContent: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666666',
+    marginTop: 12,
+  },
+  errorText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#dc2929',
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  errorSubtext: {
+    fontSize: 14,
+    color: '#999999',
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: '#226cae',
+    borderRadius: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  emptyStudentsContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+    marginTop: 20,
+  },
+  emptyStudentsText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#666666',
+    marginTop: 12,
+  },
+  emptyStudentsSubtext: {
+    fontSize: 14,
+    color: '#999999',
+    textAlign: 'center',
+    marginTop: 8,
   },
   header: {
     paddingTop: 60,
