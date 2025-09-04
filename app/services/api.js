@@ -330,8 +330,13 @@ export const communicationAPI = {
 // Sessions API
 export const sessionsAPI = {
   // Get user's sessions
-  getMySessions: async (page = 1, limit = 20) => {
-    return await apiRequest(`/sessions/my-sessions?page=${page}&limit=${limit}`);
+  getMySessions: async (filters = {}) => {
+    const queryParams = new URLSearchParams({
+      page: '1',
+      limit: '20',
+      ...filters
+    }).toString();
+    return await apiRequest(`/sessions/my-sessions?${queryParams}`);
   },
 
   // Get specific session

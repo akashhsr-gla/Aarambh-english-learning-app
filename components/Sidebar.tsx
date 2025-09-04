@@ -1,7 +1,8 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { useEffect, useRef } from 'react';
-import { Animated, Dimensions, Modal, Platform, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Animated, Dimensions, Modal, Platform, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { authAPI } from '../app/services/api';
 import { ThemedText } from './ThemedText';
 
 interface SidebarProps {
@@ -15,7 +16,11 @@ const STATUS_BAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight |
 
 export default function Sidebar({ visible, onClose }: SidebarProps) {
   const slideAnim = useRef(new Animated.Value(SIDEBAR_WIDTH)).current;
-  const navigation = useNavigation(); 
+  const navigation = useNavigation();
+  const [user, setUser] = useState<any>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
     if (visible) {
       Animated.timing(slideAnim, {
@@ -23,6 +28,9 @@ export default function Sidebar({ visible, onClose }: SidebarProps) {
         duration: 300,
         useNativeDriver: true,
       }).start();
+      
+      // Load user data when sidebar opens
+      loadUserData();
     } else {
       Animated.timing(slideAnim, {
         toValue: SIDEBAR_WIDTH,
@@ -31,6 +39,34 @@ export default function Sidebar({ visible, onClose }: SidebarProps) {
       }).start();
     }
   }, [visible, slideAnim]);
+
+  const loadUserData = async () => {
+    try {
+      setLoading(true);
+      const userData = await authAPI.getCurrentUser();
+      setUser(userData.data.user);
+      setIsAuthenticated(true);
+    } catch (error) {
+      console.log('User not authenticated');
+      setIsAuthenticated(false);
+      setUser(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await authAPI.logout();
+      setUser(null);
+      setIsAuthenticated(false);
+      onClose();
+      // @ts-ignore
+      navigation.navigate('LoginScreen');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
 
   const navigateToScreen = (screenName: string) => {
     onClose();
@@ -53,80 +89,121 @@ export default function Sidebar({ visible, onClose }: SidebarProps) {
         >
           {/* User Profile Section with Close Button */}
           <View style={styles.profileSection}>
-            <View style={styles.profileContent}>
-              <View style={styles.profileAvatar}>
-                <FontAwesome name="user" size={40} color="#FFFFFF" />
-              </View>
-              <View style={styles.profileInfo}>
-                <ThemedText style={styles.profileName}>User Name</ThemedText>
-                <ThemedText style={styles.profileEmail}>user@example.com</ThemedText>
-              </View>
-            </View>
             <TouchableOpacity style={styles.closeButton} onPress={onClose}>
               <FontAwesome name="times" size={24} color="#FFFFFF" />
             </TouchableOpacity>
+            
+            {loading ? (
+              <View style={styles.loadingProfile}>
+                <ActivityIndicator size="small" color="#FFFFFF" />
+                <ThemedText style={styles.loadingText}>Loading...</ThemedText>
+              </View>
+            ) : isAuthenticated && user ? (
+              <View style={styles.profileContent}>
+                <View style={styles.profileAvatar}>
+                  <FontAwesome name="user" size={40} color="#FFFFFF" />
+                </View>
+                <View style={styles.profileInfo}>
+                  <ThemedText style={styles.profileName}>{user.name || 'User'}</ThemedText>
+                  <ThemedText style={styles.profileEmail}>{user.email}</ThemedText>
+                  <ThemedText style={styles.profileRole}>
+                    {user.role === 'student' ? '🎓 Student' : user.role === 'teacher' ? '👨‍🏫 Teacher' : '👤 User'}
+                  </ThemedText>
+                </View>
+              </View>
+            ) : (
+              <TouchableOpacity 
+                style={styles.signInPrompt}
+                onPress={() => navigateToScreen('LoginScreen')}
+              >
+                <FontAwesome name="sign-in" size={32} color="#FFFFFF" />
+                <ThemedText style={styles.signInText}>Sign In</ThemedText>
+                <ThemedText style={styles.signInSubtext}>Access your account</ThemedText>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Menu Items */}
           <View style={styles.menuItems}>
-            <TouchableOpacity style={styles.menuItem}>
-              <FontAwesome name="user-circle" size={24} color="#333333" style={styles.menuIcon} />
-              <ThemedText style={styles.menuText}>Account</ThemedText>
-            </TouchableOpacity>
+            {isAuthenticated ? (
+              <>
+                <TouchableOpacity 
+                  style={styles.menuItem}
+                  onPress={() => navigateToScreen('ProfileScreen')}
+                >
+                  <FontAwesome name="user-circle" size={24} color="#333333" style={styles.menuIcon} />
+                  <ThemedText style={styles.menuText}>Profile</ThemedText>
+                </TouchableOpacity>
 
-            <TouchableOpacity style={styles.menuItem}>
-              <FontAwesome name="star" size={24} color="#dc2929" style={styles.menuIcon} />
-              <ThemedText style={styles.menuText}>Subscription</ThemedText>
-            </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.menuItem}
+                  onPress={() => navigateToScreen('SubscriptionScreen')}
+                >
+                  <FontAwesome name="star" size={24} color="#dc2929" style={styles.menuIcon} />
+                  <ThemedText style={styles.menuText}>Subscription</ThemedText>
+                </TouchableOpacity>
 
-            <TouchableOpacity style={styles.menuItem}>
-              <FontAwesome name="bell" size={24} color="#226cae" style={styles.menuIcon} />
-              <ThemedText style={styles.menuText}>Notifications</ThemedText>
-              <View style={styles.notificationBadge}>
-                <ThemedText style={styles.notificationText}>3</ThemedText>
-              </View>
-            </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.menuItem}
+                  onPress={() => navigateToScreen('RegionScreen')}
+                >
+                  <FontAwesome name="map-marker" size={24} color="#226cae" style={styles.menuIcon} />
+                  <ThemedText style={styles.menuText}>Region</ThemedText>
+                </TouchableOpacity>
 
-            <View style={styles.divider} />
+                <TouchableOpacity 
+                  style={styles.menuItem}
+                  onPress={() => navigateToScreen('SessionsScreen')}
+                >
+                  <FontAwesome name="history" size={24} color="#dc2929" style={styles.menuIcon} />
+                  <ThemedText style={styles.menuText}>Sessions</ThemedText>
+                </TouchableOpacity>
 
-            <TouchableOpacity style={styles.menuItem}>
-              <FontAwesome name="book" size={24} color="#dc2929" style={styles.menuIcon} />
-              <ThemedText style={styles.menuText}>Lessons</ThemedText>
-            </TouchableOpacity>
+                <View style={styles.divider} />
 
-            <TouchableOpacity 
-              style={styles.menuItem}
-              onPress={() => navigateToScreen('RegionScreen')}
-            >
-              <FontAwesome name="map-marker" size={24} color="#226cae" style={styles.menuIcon} />
-              <ThemedText style={styles.menuText}>Region</ThemedText>
-            </TouchableOpacity>
+                <TouchableOpacity 
+                  style={styles.menuItem}
+                  onPress={() => navigateToScreen('LearnScreen')}
+                >
+                  <FontAwesome name="book" size={24} color="#dc2929" style={styles.menuIcon} />
+                  <ThemedText style={styles.menuText}>Lessons</ThemedText>
+                </TouchableOpacity>
 
-            <TouchableOpacity style={styles.menuItem}>
-              <FontAwesome name="history" size={24} color="#dc2929" style={styles.menuIcon} />
-              <ThemedText style={styles.menuText}>History</ThemedText>
-            </TouchableOpacity>
+                <TouchableOpacity style={styles.menuItem}>
+                  <FontAwesome name="question-circle" size={24} color="#226cae" style={styles.menuIcon} />
+                  <ThemedText style={styles.menuText}>Help</ThemedText>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity 
+                  style={styles.menuItem}
+                  onPress={() => navigateToScreen('LoginScreen')}
+                >
+                  <FontAwesome name="sign-in" size={24} color="#dc2929" style={styles.menuIcon} />
+                  <ThemedText style={styles.menuText}>Sign In</ThemedText>
+                </TouchableOpacity>
 
-            <TouchableOpacity style={styles.menuItem}>
-              <FontAwesome name="question-circle" size={24} color="#226cae" style={styles.menuIcon} />
-              <ThemedText style={styles.menuText}>Help</ThemedText>
-            </TouchableOpacity>
+                <TouchableOpacity style={styles.menuItem}>
+                  <FontAwesome name="question-circle" size={24} color="#226cae" style={styles.menuIcon} />
+                  <ThemedText style={styles.menuText}>Help</ThemedText>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
 
-          {/* Logout Button */}
-          <View style={styles.footer}>
-            <TouchableOpacity 
-              style={styles.logoutButton}
-              onPress={() => {
-                onClose();
-                // @ts-ignore
-                navigation.navigate('LoginScreen');
-              }}
-            >
-              <FontAwesome name="sign-out" size={24} color="#FFFFFF" style={styles.logoutIcon} />
-              <ThemedText style={styles.logoutText}>Logout</ThemedText>
-            </TouchableOpacity>
-          </View>
+          {/* Footer */}
+          {isAuthenticated && (
+            <View style={styles.footer}>
+              <TouchableOpacity 
+                style={styles.logoutButton}
+                onPress={handleLogout}
+              >
+                <FontAwesome name="sign-out" size={24} color="#FFFFFF" style={styles.logoutIcon} />
+                <ThemedText style={styles.logoutText}>Logout</ThemedText>
+              </TouchableOpacity>
+            </View>
+          )}
         </Animated.View>
       </View>
     </Modal>
@@ -195,6 +272,38 @@ const styles = StyleSheet.create({
   profileEmail: {
     color: 'rgba(255, 255, 255, 0.8)',
     fontSize: 14,
+  },
+  profileRole: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  loadingProfile: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+  },
+  loadingText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    marginLeft: 10,
+  },
+  signInPrompt: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+  },
+  signInText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '600',
+    marginTop: 10,
+  },
+  signInSubtext: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 12,
+    marginTop: 4,
   },
   menuItems: {
     paddingVertical: 10,
