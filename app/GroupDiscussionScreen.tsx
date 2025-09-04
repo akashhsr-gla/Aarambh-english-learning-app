@@ -1,12 +1,13 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useState } from 'react';
-import { Alert, Dimensions, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { Alert, Dimensions, ScrollView, StyleSheet, TextInput, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 
 import GameHeader from '../components/GameHeader';
 import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
+import { groupsAPI } from './services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -28,90 +29,62 @@ interface GroupDiscussion {
   createdAt: Date;
 }
 
-// Sample group discussions
-const sampleGroups: GroupDiscussion[] = [
-  {
-    id: '1',
-    title: 'English Conversation Practice',
-    topic: 'Daily Routines and Habits',
-    participants: [
-      { id: '1', name: 'John Smith' },
-      { id: '2', name: 'Maria Garcia' },
-      { id: '3', name: 'Wei Chen' },
-    ],
-    maxParticipants: 5,
-    status: 'open',
-    level: 'beginner',
-    createdAt: new Date(Date.now() - 1000 * 60 * 15), // 15 minutes ago
-  },
-  {
-    id: '2',
-    title: 'Business English Discussion',
-    topic: 'Job Interview Preparation',
-    participants: [
-      { id: '1', name: 'Sarah Johnson' },
-      { id: '2', name: 'Michael Brown' },
-      { id: '3', name: 'Emma Wilson' },
-      { id: '4', name: 'David Lee' },
-    ],
-    maxParticipants: 4,
-    status: 'full',
-    level: 'intermediate',
-    createdAt: new Date(Date.now() - 1000 * 60 * 30), // 30 minutes ago
-  },
-  {
-    id: '3',
-    title: 'Academic Discussion Group',
-    topic: 'Climate Change Research',
-    participants: [
-      { id: '1', name: 'Robert Taylor' },
-      { id: '2', name: 'Jennifer Davis' },
-      { id: '3', name: 'Thomas Wilson' },
-      { id: '4', name: 'Lisa Anderson' },
-      { id: '5', name: 'James Martin' },
-    ],
-    maxParticipants: 8,
-    status: 'ongoing',
-    level: 'advanced',
-    createdAt: new Date(Date.now() - 1000 * 60 * 45), // 45 minutes ago
-  },
-  {
-    id: '4',
-    title: 'Travel and Culture Exchange',
-    topic: 'Favorite Travel Destinations',
-    participants: [
-      { id: '1', name: 'Anna Kim' },
-      { id: '2', name: 'Carlos Rodriguez' },
-    ],
-    maxParticipants: 6,
-    status: 'open',
-    level: 'intermediate',
-    createdAt: new Date(Date.now() - 1000 * 60 * 60), // 1 hour ago
-  },
-  {
-    id: '5',
-    title: 'Movie Discussion Club',
-    topic: 'Recent Oscar-Winning Films',
-    participants: [
-      { id: '1', name: 'Daniel White' },
-      { id: '2', name: 'Sophia Martinez' },
-      { id: '3', name: 'Ryan Johnson' },
-    ],
-    maxParticipants: 5,
-    status: 'open',
-    level: 'beginner',
-    createdAt: new Date(Date.now() - 1000 * 60 * 90), // 1.5 hours ago
-  },
-];
+// Group discussions will be loaded from backend
 
 export default function GroupDiscussionScreen() {
   const navigation = useNavigation();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLevel, setSelectedLevel] = useState<string | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<GroupStatus | null>(null);
-  
-  // Filter groups based on search query and filters
-  const filteredGroups = sampleGroups.filter(group => {
+  const [groups, setGroups] = useState<GroupDiscussion[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Fetch groups from backend
+  const fetchGroups = async () => {
+    try {
+      setError(null);
+      const filters: any = {};
+      if (selectedLevel) filters.level = selectedLevel;
+      if (selectedStatus) filters.status = selectedStatus;
+      if (searchQuery) filters.search = searchQuery;
+
+      const response = await groupsAPI.getAvailableGroups(filters);
+      
+      // Map backend response to frontend interface
+      const mappedGroups: GroupDiscussion[] = response.data.groups.map((group: any) => ({
+        id: group.id,
+        title: group.title,
+        topic: group.topic,
+        participants: group.participants.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          avatar: p.avatar
+        })),
+        maxParticipants: group.maxParticipants,
+        status: group.status as GroupStatus,
+        level: group.level,
+        createdAt: new Date(group.createdAt)
+      }));
+
+      setGroups(mappedGroups);
+    } catch (err: any) {
+      console.error('Error fetching groups:', err);
+      setError(err.message || 'Failed to load groups');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  // Load groups on component mount and when filters change
+  useEffect(() => {
+    fetchGroups();
+  }, [selectedLevel, selectedStatus, searchQuery]);
+
+  // Filter groups based on search query and filters (client-side for performance)
+  const filteredGroups = groups.filter(group => {
     const matchesSearch = searchQuery === '' || 
       group.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       group.topic.toLowerCase().includes(searchQuery.toLowerCase());
@@ -127,7 +100,7 @@ export default function GroupDiscussionScreen() {
     navigation.navigate('CreateGroupScreen');
   };
   
-  const handleJoinGroup = (group: GroupDiscussion, mode: 'chat' | 'voice' | 'video') => {
+  const handleJoinGroup = async (group: GroupDiscussion, mode: 'chat' | 'voice' | 'video') => {
     if (group.status === 'full') {
       Alert.alert('Group Full', 'This group has reached its maximum number of participants.');
       return;
@@ -137,29 +110,48 @@ export default function GroupDiscussionScreen() {
       Alert.alert('Group Ongoing', 'This group discussion is already in progress.');
       return;
     }
-    
-    if (mode === 'chat') {
-      // @ts-ignore
-      navigation.navigate('GroupChatScreen', { groupId: group.id });
-    } else if (mode === 'voice') {
-      // @ts-ignore
-      navigation.navigate('GroupVideoCallScreen', { 
-        groupInfo: {
-          title: group.title,
-          topic: group.topic,
-          participants: group.participants
-        },
-        isVoiceOnly: true
-      });
-    } else if (mode === 'video') {
-      // @ts-ignore
-      navigation.navigate('GroupVideoCallScreen', { 
-        groupInfo: {
-          title: group.title,
-          topic: group.topic,
-          participants: group.participants
-        }
-      });
+
+    try {
+      setLoading(true);
+      
+      // Join the group first
+      const joinResponse = await groupsAPI.joinGroup(group.id);
+      
+      if (mode === 'chat') {
+        // @ts-ignore
+        navigation.navigate('GroupChatScreen', { 
+          groupId: group.id,
+          groupInfo: {
+            title: group.title,
+            topic: group.topic,
+            maxParticipants: group.maxParticipants,
+            level: group.level,
+            isPrivate: false,
+            password: null
+          },
+          participants: joinResponse.data.participants
+        });
+      } else {
+        // For voice/video, navigate to waiting room first
+        // @ts-ignore
+        navigation.navigate('GroupWaitingRoom', {
+          groupInfo: {
+            title: group.title,
+            topic: group.topic,
+            maxParticipants: group.maxParticipants,
+            level: group.level,
+            isPrivate: false,
+            password: null
+          },
+          groupId: group.id,
+          sessionType: mode
+        });
+      }
+    } catch (error: any) {
+      console.error('Error joining group:', error);
+      Alert.alert('Error', error.message || 'Failed to join group');
+    } finally {
+      setLoading(false);
     }
   };
   
@@ -279,8 +271,30 @@ export default function GroupDiscussionScreen() {
         </ScrollView>
         
         {/* Group List */}
-        <ScrollView style={styles.groupsContainer}>
-          {filteredGroups.length === 0 ? (
+        <ScrollView 
+          style={styles.groupsContainer}
+          refreshControl={
+            <ActivityIndicator animating={refreshing} />
+          }
+        >
+          {loading ? (
+            <ThemedView style={styles.loadingState}>
+              <ActivityIndicator size="large" color="#dc2929" />
+              <ThemedText style={styles.loadingText}>Loading groups...</ThemedText>
+            </ThemedView>
+          ) : error ? (
+            <ThemedView style={styles.errorState}>
+              <FontAwesome name="exclamation-triangle" size={50} color="#dc2929" />
+              <ThemedText style={styles.errorStateText}>Error Loading Groups</ThemedText>
+              <ThemedText style={styles.errorStateSubtext}>{error}</ThemedText>
+              <TouchableOpacity style={styles.retryButton} onPress={() => {
+                setLoading(true);
+                fetchGroups();
+              }}>
+                <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
+              </TouchableOpacity>
+            </ThemedView>
+          ) : filteredGroups.length === 0 ? (
             <ThemedView style={styles.emptyState}>
               <FontAwesome name="users" size={50} color="#CCCCCC" />
               <ThemedText style={styles.emptyStateText}>No groups found</ThemedText>
@@ -496,23 +510,65 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingTop: 4,
   },
+  loadingState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+    marginTop: 40,
+  },
+  loadingText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#666666',
+    marginTop: 12,
+  },
+  errorState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+    marginTop: 40,
+  },
+  errorStateText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#dc2929',
+    marginTop: 12,
+  },
+  errorStateSubtext: {
+    fontSize: 14,
+    color: '#999999',
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  retryButton: {
+    backgroundColor: '#dc2929',
+    borderRadius: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+    fontSize: 16,
+  },
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 2,
-    marginTop: 3,
+    padding: 40,
+    marginTop: 40,
   },
   emptyStateText: {
-    fontSize: 2,
+    fontSize: 18,
     fontWeight: '600',
     color: '#666666',
-    marginTop: 2,
+    marginTop: 12,
   },
   emptyStateSubtext: {
     fontSize: 14,
     color: '#999999',
     textAlign: 'center',
-    marginTop: 2,
+    marginTop: 8,
   },
   groupCard: {
     backgroundColor: '#FFFFFF',

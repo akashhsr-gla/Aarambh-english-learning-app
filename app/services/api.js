@@ -433,6 +433,78 @@ export const referralsAPI = {
   },
 };
 
+// Groups API
+export const groupsAPI = {
+  // Create group discussion room
+  createGroup: async (groupData) => {
+    return await apiRequest('/groups/create', {
+      method: 'POST',
+      body: JSON.stringify(groupData),
+    });
+  },
+
+  // Get available groups (region-based)
+  getAvailableGroups: async (filters = {}) => {
+    const queryParams = new URLSearchParams(filters).toString();
+    const endpoint = queryParams ? `/groups/available?${queryParams}` : '/groups/available';
+    return await apiRequest(endpoint);
+  },
+
+  // Join group by ID
+  joinGroup: async (groupId, password = null) => {
+    return await apiRequest('/groups/join', {
+      method: 'POST',
+      body: JSON.stringify({ groupId, password }),
+    });
+  },
+
+  // Join group by code
+  joinGroupByCode: async (joinCode, password = null) => {
+    return await apiRequest('/groups/join-by-code', {
+      method: 'POST',
+      body: JSON.stringify({ joinCode, password }),
+    });
+  },
+
+  // Get group details
+  getGroupDetails: async (groupId) => {
+    return await apiRequest(`/groups/${groupId}`);
+  },
+
+  // Send message to group
+  sendMessage: async (groupId, message, messageType = 'text') => {
+    return await apiRequest(`/groups/${groupId}/message`, {
+      method: 'POST',
+      body: JSON.stringify({ message, messageType }),
+    });
+  },
+
+  // Get group messages
+  getMessages: async (groupId, page = 1, limit = 50) => {
+    return await apiRequest(`/groups/${groupId}/messages?page=${page}&limit=${limit}`);
+  },
+
+  // Start group session (host only)
+  startSession: async (groupId, sessionType) => {
+    return await apiRequest(`/groups/${groupId}/start`, {
+      method: 'POST',
+      body: JSON.stringify({ sessionType }),
+    });
+  },
+
+  // Leave group
+  leaveGroup: async (groupId) => {
+    return await apiRequest(`/groups/${groupId}/leave`, {
+      method: 'POST',
+    });
+  },
+
+  // Get user's active groups
+  getActiveGroups: async () => {
+    return await apiRequest('/groups/my/active');
+  },
+};
+
 export default {
   auth: authAPI,
   games: gamesAPI,
@@ -444,4 +516,5 @@ export default {
   plans: plansAPI,
   transactions: transactionsAPI,
   referrals: referralsAPI,
+  groups: groupsAPI,
 };

@@ -92,6 +92,7 @@ app.use('/api/leaderboard', require('./routes/leaderboard'));
 app.use('/api/referrals', require('./routes/referrals'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/communication', require('./routes/communication'));
+app.use('/api/groups', require('./routes/groups'));
 
 // Test endpoint to list all available routes
 app.get('/test', (req, res) => {
@@ -217,6 +218,18 @@ app.get('/test', (req, res) => {
         'POST /api/communication/call/:sessionId/end',
         'GET /api/communication/session/:sessionId',
         'GET /api/communication/admin/sessions'
+      ],
+      groups: [
+        'POST /api/groups/create',
+        'GET /api/groups/available',
+        'POST /api/groups/join',
+        'POST /api/groups/join-by-code',
+        'GET /api/groups/:groupId',
+        'POST /api/groups/:groupId/message',
+        'GET /api/groups/:groupId/messages',
+        'POST /api/groups/:groupId/start',
+        'POST /api/groups/:groupId/leave',
+        'GET /api/groups/my/active'
       ]
     }
   });
