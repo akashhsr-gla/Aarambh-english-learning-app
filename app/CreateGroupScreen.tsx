@@ -2,11 +2,12 @@ import { FontAwesome } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Switch, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Switch, TextInput, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 
 import GameHeader from '../components/GameHeader';
 import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
+import { groupsAPI } from './services/api';
 
 export default function CreateGroupScreen() {
   const navigation = useNavigation();
@@ -16,8 +17,9 @@ export default function CreateGroupScreen() {
   const [level, setLevel] = useState<'beginner' | 'intermediate' | 'advanced'>('intermediate');
   const [isPrivate, setIsPrivate] = useState(false);
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
   
-  const handleCreateGroup = () => {
+  const handleCreateGroup = async () => {
     // Validate inputs
     if (!title.trim()) {
       Alert.alert('Error', 'Please enter a group title');
@@ -40,18 +42,45 @@ export default function CreateGroupScreen() {
       return;
     }
     
-    // Create the group and navigate to the waiting room
-    // @ts-ignore
-    navigation.navigate('GroupWaitingRoom', {
-      groupInfo: {
-        title,
-        topic,
+    try {
+      setLoading(true);
+      
+      // Create the group via API
+      const groupData = {
+        title: title.trim(),
+        topic: topic.trim(),
         maxParticipants: participants,
         level,
         isPrivate,
-        password: isPrivate ? password : null,
+        password: isPrivate ? password.trim() : undefined
+      };
+      
+      const response = await groupsAPI.createGroup(groupData);
+      
+      if (response.success) {
+        // Navigate to the waiting room with the created group
+        // @ts-ignore
+        navigation.navigate('GroupWaitingRoom', {
+          groupInfo: {
+            title,
+            topic,
+            maxParticipants: participants,
+            level,
+            isPrivate,
+            password: isPrivate ? password : null
+          },
+          groupId: response.data.groupId,
+          participants: response.data.participants
+        });
+      } else {
+        Alert.alert('Error', response.message || 'Failed to create group');
       }
-    });
+    } catch (error: any) {
+      console.error('Create group error:', error);
+      Alert.alert('Error', error.message || 'Failed to create group. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
   
   return (
@@ -213,9 +242,22 @@ export default function CreateGroupScreen() {
       </ScrollView>
       
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.createButton} onPress={handleCreateGroup}>
-          <ThemedText style={styles.createButtonText}>Create Group</ThemedText>
-          <FontAwesome name="arrow-right" size={16} color="#FFFFFF" />
+        <TouchableOpacity 
+          style={[styles.createButton, loading && styles.disabledButton]} 
+          onPress={handleCreateGroup}
+          disabled={loading}
+        >
+          {loading ? (
+            <>
+              <ActivityIndicator size="small" color="#FFFFFF" />
+              <ThemedText style={styles.createButtonText}>Creating...</ThemedText>
+            </>
+          ) : (
+            <>
+              <ThemedText style={styles.createButtonText}>Create Group</ThemedText>
+              <FontAwesome name="arrow-right" size={16} color="#FFFFFF" />
+            </>
+          )}
         </TouchableOpacity>
       </View>
     </View>
@@ -400,6 +442,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
   createButtonText: {
     color: '#FFFFFF',
