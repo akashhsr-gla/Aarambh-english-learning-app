@@ -56,7 +56,9 @@ const sessionSchema = new mongoose.Schema({
     },
     cameraEnabled: {
       type: Boolean,
-      default: true
+      default: function() {
+        return this.parent().sessionType.includes('video');
+      }
     },
     isSpeaking: {
       type: Boolean,
@@ -91,11 +93,16 @@ const sessionSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  hostRegion: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Region',
+    required: false
+  },
   
   // Session Status
   status: {
     type: String,
-    enum: ['scheduled', 'active', 'completed', 'cancelled', 'failed'],
+    enum: ['scheduled', 'active', 'completed', 'cancelled', 'failed', 'waiting_for_partner'],
     default: 'scheduled'
   },
   
@@ -259,6 +266,34 @@ const sessionSchema = new mongoose.Schema({
         type: Boolean,
         default: true
       }
+    },
+    signaling: {
+      offer: {
+        from: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        type: { type: String },
+        sdp: { type: String },
+        createdAt: { type: Date }
+      },
+      answer: {
+        from: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        type: { type: String },
+        sdp: { type: String },
+        createdAt: { type: Date }
+      },
+      iceCandidates: [{
+        from: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        candidate: { type: String },
+        sdpMid: { type: String },
+        sdpMLineIndex: { type: Number },
+        createdAt: { type: Date, default: Date.now }
+      }]
+    },
+    // Video upgrade requests
+    videoUpgradeRequest: {
+      from: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      to: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      status: { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
+      requestedAt: { type: Date, default: Date.now }
     }
   },
   

@@ -158,22 +158,22 @@ export default function GameScreen() {
         setTimeLeft(game.timeLimit || 300);
         setGameStarted(true);
         setGameOver(false);
-        setShowResult(false);
+      setShowResult(false);
         setSelectedAnswer(null);
-        
-        // Reset animations
-        Animated.parallel([
-          Animated.timing(fadeAnim, {
-            toValue: 1,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(slideAnim, {
-            toValue: 0,
-            duration: 500,
-            useNativeDriver: true,
-          })
-        ]).start();
+      
+      // Reset animations
+      Animated.parallel([
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 500,
+          useNativeDriver: true,
+        }),
+        Animated.timing(slideAnim, {
+          toValue: 0,
+          duration: 500,
+          useNativeDriver: true,
+        })
+      ]).start();
       } else {
         Alert.alert('Error', response.message || 'Failed to start game');
       }
@@ -268,7 +268,7 @@ export default function GameScreen() {
   const finishGame = async () => {
     if (!selectedGame) return;
     
-    setGameOver(true);
+      setGameOver(true);
     
     try {
       // Submit game results to backend
@@ -283,14 +283,14 @@ export default function GameScreen() {
       console.error('Error submitting game:', err);
     }
     
-    Alert.alert(
-      "Game Completed!",
+      Alert.alert(
+        "Game Completed!",
       `Your final score: ${score} out of ${selectedGame.maxScore}`,
-      [
+        [
         { text: "Play Again", onPress: () => startGame(selectedGame) },
         { text: "Back to Games", onPress: () => setGameStarted(false) }
-      ]
-    );
+        ]
+      );
   };
 
   const resetGame = () => {
@@ -359,42 +359,42 @@ export default function GameScreen() {
 
   if (gameStarted && selectedGame) {
     const currentQuestion = selectedGame.questions[currentQuestionIndex];
-    
-    return (
-      <View style={styles.container}>
-        <LinearGradient
-          colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.gradientBackground}
-        />
-        
+
+  return (
+    <View style={styles.container}>
+      <LinearGradient
+        colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.gradientBackground}
+      />
+      
         <GameHeader 
           title={selectedGame.title} 
           showBackButton 
           onBackPress={resetGame} 
         />
-        
-        <View style={styles.scoreContainer}>
-          <View style={styles.scoreItem}>
-            <FontAwesome name="star" size={18} color="#FFD700" />
-            <ThemedText style={styles.scoreText}>Score: {score}</ThemedText>
-          </View>
-          <View style={styles.scoreItem}>
+      
+      <View style={styles.scoreContainer}>
+        <View style={styles.scoreItem}>
+          <FontAwesome name="star" size={18} color="#FFD700" />
+          <ThemedText style={styles.scoreText}>Score: {score}</ThemedText>
+        </View>
+        <View style={styles.scoreItem}>
             <FontAwesome name="clock-o" size={18} color={timeLeft < 60 ? "#dc2929" : "#226cae"} />
             <ThemedText style={styles.scoreText}>
               {formatTime(timeLeft)}
-            </ThemedText>
-          </View>
-          <View style={styles.scoreItem}>
-            <FontAwesome name="tasks" size={18} color="#226cae" />
-            <ThemedText style={styles.scoreText}>
-              {currentQuestionIndex + 1}/{selectedGame.questions.length}
-            </ThemedText>
-          </View>
+          </ThemedText>
         </View>
-        
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollViewContent}>
+        <View style={styles.scoreItem}>
+          <FontAwesome name="tasks" size={18} color="#226cae" />
+          <ThemedText style={styles.scoreText}>
+              {currentQuestionIndex + 1}/{selectedGame.questions.length}
+          </ThemedText>
+        </View>
+      </View>
+      
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollViewContent}>
           <Animated.View 
             style={[
               styles.questionContainer,

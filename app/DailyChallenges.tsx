@@ -7,6 +7,8 @@ import { ActivityIndicator, Dimensions, ScrollView, StyleSheet, TouchableOpacity
 import GameHeader from '../components/GameHeader';
 import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
+import FeatureAccessWrapper from './components/FeatureAccessWrapper';
+import { useFeatureAccess } from './hooks/useFeatureAccess';
 import { gamesAPI } from './services/api';
 
 const { width } = Dimensions.get('window');
@@ -76,6 +78,9 @@ export default function DailyChallenges() {
   } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Feature access control
+  const { canAccess: canPlayGames, featureInfo: gameFeatureInfo } = useFeatureAccess('games');
   
   // Fetch daily challenge on component mount
   useEffect(() => {
@@ -138,7 +143,7 @@ export default function DailyChallenges() {
       setLoading(false);
     }
   };
-
+  
   const navigateToGame = (gameName: string) => {
     switch(gameName) {
       case 'grammar':
@@ -295,14 +300,14 @@ export default function DailyChallenges() {
   );
 
   if (loading) {
-    return (
-      <View style={styles.container}>
-        <LinearGradient
-          colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.gradientBackground}
-        />
+  return (
+    <View style={styles.container}>
+      <LinearGradient
+        colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.gradientBackground}
+      />
         <GameHeader title="Daily Challenges" showBackButton onBackPress={() => navigation.goBack()} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#226cae" />
@@ -321,7 +326,7 @@ export default function DailyChallenges() {
           end={{ x: 1, y: 1 }}
           style={styles.gradientBackground}
         />
-        <GameHeader title="Daily Challenges" showBackButton onBackPress={() => navigation.goBack()} />
+      <GameHeader title="Daily Challenges" showBackButton onBackPress={() => navigation.goBack()} />
         <View style={styles.errorContainer}>
           <FontAwesome name="exclamation-triangle" size={48} color="#dc2929" />
           <ThemedText style={styles.errorText}>{error}</ThemedText>
@@ -344,6 +349,12 @@ export default function DailyChallenges() {
       
       <GameHeader title="Daily Challenges" showBackButton onBackPress={() => navigation.goBack()} />
       
+      <FeatureAccessWrapper
+        featureKey="games"
+        fallback={null}
+        style={styles.container}
+        navigation={navigation}
+      >
       {/* Filter Section */}
       <View style={styles.filterContainer}>
         <TouchableOpacity 
@@ -436,28 +447,28 @@ export default function DailyChallenges() {
       </View>
       
                 {/* Dynamic stats will be loaded from backend */}
-          <View style={styles.statsContainer}>
-            <View style={styles.statItem}>
+      <View style={styles.statsContainer}>
+        <View style={styles.statItem}>
               <ThemedText style={styles.statValue}>
                 {loading ? '...' : '0'}
               </ThemedText>
-              <ThemedText style={styles.statLabel}>Total Points</ThemedText>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
+          <ThemedText style={styles.statLabel}>Total Points</ThemedText>
+        </View>
+        <View style={styles.statDivider} />
+        <View style={styles.statItem}>
               <ThemedText style={styles.statValue}>
                 {loading ? '...' : '0/0'}
               </ThemedText>
-              <ThemedText style={styles.statLabel}>Completed Today</ThemedText>
-            </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
+          <ThemedText style={styles.statLabel}>Completed Today</ThemedText>
+        </View>
+        <View style={styles.statDivider} />
+        <View style={styles.statItem}>
               <ThemedText style={styles.statValue}>
                 {loading ? '...' : '0'}
               </ThemedText>
-              <ThemedText style={styles.statLabel}>Day Streak</ThemedText>
-            </View>
-          </View>
+          <ThemedText style={styles.statLabel}>Day Streak</ThemedText>
+        </View>
+      </View>
       
       <View style={styles.tabContainer}>
         <TouchableOpacity 
@@ -496,7 +507,7 @@ export default function DailyChallenges() {
               <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color="#226cae" />
                 <ThemedText style={styles.loadingText}>Loading challenges...</ThemedText>
-              </View>
+            </View>
             ) : error ? (
               <View style={styles.errorContainer}>
                 <FontAwesome name="exclamation-triangle" size={48} color="#dc2929" />
@@ -533,49 +544,50 @@ export default function DailyChallenges() {
                 </View>
               ) : (
                 <>
-                  <View style={styles.progressTrack}>
-                    <View style={styles.progressFill} />
-                    
-                    <View style={[styles.progressMarker, styles.progressMarkerCompleted, { left: '14%' }]}>
-                      <View style={styles.markerIcon}>
-                        <FontAwesome name="star" size={12} color="#FFFFFF" />
-                      </View>
-                      <ThemedText style={styles.markerLabel}>100 pts</ThemedText>
-                    </View>
-                    
-                    <View style={[styles.progressMarker, { left: '42%' }]}>
-                      <View style={[styles.markerIcon, styles.markerIconIncomplete]}>
-                        <FontAwesome name="gift" size={12} color="#666666" />
-                      </View>
-                      <ThemedText style={styles.markerLabel}>300 pts</ThemedText>
-                    </View>
-                    
-                    <View style={[styles.progressMarker, { left: '71%' }]}>
-                      <View style={[styles.markerIcon, styles.markerIconIncomplete]}>
-                        <FontAwesome name="trophy" size={12} color="#666666" />
-                      </View>
-                      <ThemedText style={styles.markerLabel}>500 pts</ThemedText>
-                    </View>
-                    
-                    <View style={[styles.progressMarker, { right: '0%' }]}>
-                      <View style={[styles.markerIcon, styles.markerIconIncomplete]}>
-                        <FontAwesome name="diamond" size={12} color="#666666" />
-                      </View>
-                      <ThemedText style={styles.markerLabel}>700 pts</ThemedText>
-                    </View>
+              <View style={styles.progressTrack}>
+                <View style={styles.progressFill} />
+                
+                <View style={[styles.progressMarker, styles.progressMarkerCompleted, { left: '14%' }]}>
+                  <View style={styles.markerIcon}>
+                    <FontAwesome name="star" size={12} color="#FFFFFF" />
                   </View>
-                  
-                  <View style={styles.progressStats}>
-                    <ThemedText style={styles.progressStatsText}>
+                  <ThemedText style={styles.markerLabel}>100 pts</ThemedText>
+                </View>
+                
+                <View style={[styles.progressMarker, { left: '42%' }]}>
+                  <View style={[styles.markerIcon, styles.markerIconIncomplete]}>
+                    <FontAwesome name="gift" size={12} color="#666666" />
+                  </View>
+                  <ThemedText style={styles.markerLabel}>300 pts</ThemedText>
+                </View>
+                
+                <View style={[styles.progressMarker, { left: '71%' }]}>
+                  <View style={[styles.markerIcon, styles.markerIconIncomplete]}>
+                    <FontAwesome name="trophy" size={12} color="#666666" />
+                  </View>
+                  <ThemedText style={styles.markerLabel}>500 pts</ThemedText>
+                </View>
+                
+                <View style={[styles.progressMarker, { right: '0%' }]}>
+                  <View style={[styles.markerIcon, styles.markerIconIncomplete]}>
+                    <FontAwesome name="diamond" size={12} color="#666666" />
+                  </View>
+                  <ThemedText style={styles.markerLabel}>700 pts</ThemedText>
+                </View>
+              </View>
+              
+              <View style={styles.progressStats}>
+                <ThemedText style={styles.progressStatsText}>
                       <ThemedText style={styles.progressStatsHighlight}>0</ThemedText> / 700 points earned this week
-                    </ThemedText>
-                  </View>
+                </ThemedText>
+              </View>
                 </>
               )}
             </ThemedView>
           </>
         )}
       </ScrollView>
+      </FeatureAccessWrapper>
     </View>
   );
 }

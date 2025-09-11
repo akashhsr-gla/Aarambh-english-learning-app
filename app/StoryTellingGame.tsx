@@ -7,6 +7,8 @@ import { ActivityIndicator, Alert, Animated, Dimensions, Keyboard, ScrollView, S
 import GameHeader from '../components/GameHeader';
 import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
+import FeatureAccessWrapper from './components/FeatureAccessWrapper';
+import { useFeatureAccess } from './hooks/useFeatureAccess';
 import { gamesAPI } from './services/api';
 
 const { width, height } = Dimensions.get('window');
@@ -43,6 +45,9 @@ export default function StoryTellingGame() {
   const [storyPrompts, setStoryPrompts] = useState<StoryPrompt[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Feature access control
+  const { canAccess: canPlayGames, featureInfo: gameFeatureInfo } = useFeatureAccess('games');
   
   // Filter states
   const [filterOpen, setFilterOpen] = useState(false);
@@ -354,236 +359,243 @@ export default function StoryTellingGame() {
       
       <GameHeader title="Story Telling" showBackButton onBackPress={() => navigation.goBack()} />
       
-      {/* Filter Section */}
-      <View style={styles.filterContainer}>
-        <TouchableOpacity 
-          style={styles.filterButton}
-          onPress={() => setFilterOpen(!filterOpen)}
-        >
-          <FontAwesome name="filter" size={16} color="#226cae" />
-          <ThemedText style={styles.filterButtonText}>
-            {filterType === 'all' ? 'Filter' : 
-             filterType === 'exams' ? `Exam: ${selectedExam}` : 
-             `Profession: ${selectedProfession}`}
-          </ThemedText>
-          <FontAwesome name={filterOpen ? "chevron-up" : "chevron-down"} size={14} color="#666666" />
-        </TouchableOpacity>
-        
-        {filterOpen && (
-          <ThemedView style={styles.filterDropdown}>
-            <View style={styles.filterTabs}>
-              <TouchableOpacity 
-                style={[styles.filterTab, filterType === 'all' && styles.activeFilterTab]}
-                onPress={() => setFilterType('all')}
-              >
-                <ThemedText style={[styles.filterTabText, filterType === 'all' && styles.activeFilterTabText]}>
-                  All
-                </ThemedText>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.filterTab, filterType === 'exams' && styles.activeFilterTab]}
-                onPress={() => setFilterType('exams')}
-              >
-                <ThemedText style={[styles.filterTabText, filterType === 'exams' && styles.activeFilterTabText]}>
-                  Exams
-                </ThemedText>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.filterTab, filterType === 'profession' && styles.activeFilterTab]}
-                onPress={() => setFilterType('profession')}
-              >
-                <ThemedText style={[styles.filterTabText, filterType === 'profession' && styles.activeFilterTabText]}>
-                  Profession
-                </ThemedText>
-              </TouchableOpacity>
-            </View>
-            
-            {filterType === 'exams' && (
-              <View style={styles.filterOptions}>
-                {['all', 'nda', 'ssc', 'banking', 'upsc', 'cat'].map((exam) => (
-                  <TouchableOpacity 
-                    key={exam}
-                    style={[styles.filterOption, selectedExam === exam && styles.selectedFilterOption]}
-                    onPress={() => {
-                      setSelectedExam(exam as ExamType);
-                      setFilterOpen(false);
-                    }}
-                  >
-                    <ThemedText style={[styles.filterOptionText, selectedExam === exam && styles.selectedFilterOptionText]}>
-                      {exam.toUpperCase()}
-                    </ThemedText>
-                    {selectedExam === exam && (
-                      <FontAwesome name="check" size={14} color="#226cae" />
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-            
-            {filterType === 'profession' && (
-              <View style={styles.filterOptions}>
-                {['all', 'engineering', 'medical', 'teaching', 'business', 'student'].map((profession) => (
-                  <TouchableOpacity 
-                    key={profession}
-                    style={[styles.filterOption, selectedProfession === profession && styles.selectedFilterOption]}
-                    onPress={() => {
-                      setSelectedProfession(profession as ProfessionType);
-                      setFilterOpen(false);
-                    }}
-                  >
-                    <ThemedText style={[styles.filterOptionText, selectedProfession === profession && styles.selectedFilterOptionText]}>
-                      {profession.charAt(0).toUpperCase() + profession.slice(1)}
-                    </ThemedText>
-                    {selectedProfession === profession && (
-                      <FontAwesome name="check" size={14} color="#226cae" />
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-          </ThemedView>
-        )}
-      </View>
-      
-      <View style={styles.scoreContainer}>
-        <View style={styles.scoreItem}>
-          <FontAwesome name="star" size={18} color="#FFD700" />
-          <ThemedText style={styles.scoreText}>Score: {score}</ThemedText>
-        </View>
-        <View style={styles.scoreItem}>
-          <FontAwesome name="clock-o" size={18} color={timeLeft < 30 ? "#dc2929" : "#226cae"} />
-          <ThemedText style={[styles.scoreText, timeLeft < 30 && styles.urgentTime]}>
-            {formatTime(timeLeft)}
-          </ThemedText>
-        </View>
-        <View style={styles.scoreItem}>
-          <FontAwesome name="file-text-o" size={18} color="#226cae" />
-          <ThemedText style={styles.scoreText}>Words: {wordCount}</ThemedText>
-        </View>
-      </View>
-      
-      <Animated.View 
-        style={[
-          styles.gameContent,
-          {
-            opacity: fadeAnim,
-            transform: [{ translateX: slideAnim }]
-          }
-        ]}
+      <FeatureAccessWrapper
+        featureKey="games"
+        fallback={null}
+        style={styles.container}
+        navigation={navigation}
       >
-        <View style={styles.progressBar}>
-          <View style={[styles.progressFill, { width: `${((currentStoryIndex + 1) / storyPrompts.length) * 100}%` }]} />
+        {/* Filter Section */}
+        <View style={styles.filterContainer}>
+          <TouchableOpacity 
+            style={styles.filterButton}
+            onPress={() => setFilterOpen(!filterOpen)}
+          >
+            <FontAwesome name="filter" size={16} color="#226cae" />
+            <ThemedText style={styles.filterButtonText}>
+              {filterType === 'all' ? 'Filter' : 
+               filterType === 'exams' ? `Exam: ${selectedExam}` : 
+               `Profession: ${selectedProfession}`}
+            </ThemedText>
+            <FontAwesome name={filterOpen ? "chevron-up" : "chevron-down"} size={14} color="#666666" />
+          </TouchableOpacity>
+          
+          {filterOpen && (
+            <ThemedView style={styles.filterDropdown}>
+              <View style={styles.filterTabs}>
+                <TouchableOpacity 
+                  style={[styles.filterTab, filterType === 'all' && styles.activeFilterTab]}
+                  onPress={() => setFilterType('all')}
+                >
+                  <ThemedText style={[styles.filterTabText, filterType === 'all' && styles.activeFilterTabText]}>
+                    All
+                  </ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.filterTab, filterType === 'exams' && styles.activeFilterTab]}
+                  onPress={() => setFilterType('exams')}
+                >
+                  <ThemedText style={[styles.filterTabText, filterType === 'exams' && styles.activeFilterTabText]}>
+                    Exams
+                  </ThemedText>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.filterTab, filterType === 'profession' && styles.activeFilterTab]}
+                  onPress={() => setFilterType('profession')}
+                >
+                  <ThemedText style={[styles.filterTabText, filterType === 'profession' && styles.activeFilterTabText]}>
+                    Profession
+                  </ThemedText>
+                </TouchableOpacity>
+              </View>
+              
+              {filterType === 'exams' && (
+                <View style={styles.filterOptions}>
+                  {['all', 'nda', 'ssc', 'banking', 'upsc', 'cat'].map((exam) => (
+                    <TouchableOpacity 
+                      key={exam}
+                      style={[styles.filterOption, selectedExam === exam && styles.selectedFilterOption]}
+                      onPress={() => {
+                        setSelectedExam(exam as ExamType);
+                        setFilterOpen(false);
+                      }}
+                    >
+                      <ThemedText style={[styles.filterOptionText, selectedExam === exam && styles.selectedFilterOptionText]}>
+                        {exam.toUpperCase()}
+                      </ThemedText>
+                      {selectedExam === exam && (
+                        <FontAwesome name="check" size={14} color="#226cae" />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              
+              {filterType === 'profession' && (
+                <View style={styles.filterOptions}>
+                  {['all', 'engineering', 'medical', 'teaching', 'business', 'student'].map((profession) => (
+                    <TouchableOpacity 
+                      key={profession}
+                      style={[styles.filterOption, selectedProfession === profession && styles.selectedFilterOption]}
+                      onPress={() => {
+                        setSelectedProfession(profession as ProfessionType);
+                        setFilterOpen(false);
+                      }}
+                    >
+                      <ThemedText style={[styles.filterOptionText, selectedProfession === profession && styles.selectedFilterOptionText]}>
+                        {profession.charAt(0).toUpperCase() + profession.slice(1)}
+                      </ThemedText>
+                      {selectedProfession === profession && (
+                        <FontAwesome name="check" size={14} color="#226cae" />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </ThemedView>
+          )}
         </View>
         
-        <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
-          <View style={styles.storyHeader}>
-            <ThemedText style={styles.storyTitle}>{currentStory.title}</ThemedText>
-            <View style={styles.difficultyBadge}>
-              <View style={[styles.difficultyIndicator, { backgroundColor: getDifficultyColor(currentStory.difficulty) }]} />
-              <ThemedText style={styles.difficultyText}>{currentStory.difficulty}</ThemedText>
-            </View>
+        <View style={styles.scoreContainer}>
+          <View style={styles.scoreItem}>
+            <FontAwesome name="star" size={18} color="#FFD700" />
+            <ThemedText style={styles.scoreText}>Score: {score}</ThemedText>
+          </View>
+          <View style={styles.scoreItem}>
+            <FontAwesome name="clock-o" size={18} color={timeLeft < 30 ? "#dc2929" : "#226cae"} />
+            <ThemedText style={[styles.scoreText, timeLeft < 30 && styles.urgentTime]}>
+              {formatTime(timeLeft)}
+            </ThemedText>
+          </View>
+          <View style={styles.scoreItem}>
+            <FontAwesome name="file-text-o" size={18} color="#226cae" />
+            <ThemedText style={styles.scoreText}>Words: {wordCount}</ThemedText>
+          </View>
+        </View>
+        
+        <Animated.View 
+          style={[
+            styles.gameContent,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateX: slideAnim }]
+            }
+          ]}
+        >
+          <View style={styles.progressBar}>
+            <View style={[styles.progressFill, { width: `${((currentStoryIndex + 1) / storyPrompts.length) * 100}%` }]} />
           </View>
           
-          <ThemedView style={styles.storyPromptContainer}>
-            <ThemedText style={styles.storyPrompt}>{currentStory.beginning}</ThemedText>
-          </ThemedView>
-          
-          <View style={styles.keywordsContainer}>
-            <ThemedText style={styles.keywordsTitle}>Suggested Keywords:</ThemedText>
-            <View style={styles.keywordsList}>
-              {currentStory.keywords.map((keyword: string, index: number) => (
-                <View 
-                  key={index} 
-                  style={[
-                    styles.keywordBadge, 
-                    keywordsUsed.includes(keyword) && styles.usedKeywordBadge
-                  ]}
-                >
-                  <ThemedText 
+          <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
+            <View style={styles.storyHeader}>
+              <ThemedText style={styles.storyTitle}>{currentStory.title}</ThemedText>
+              <View style={styles.difficultyBadge}>
+                <View style={[styles.difficultyIndicator, { backgroundColor: getDifficultyColor(currentStory.difficulty) }]} />
+                <ThemedText style={styles.difficultyText}>{currentStory.difficulty}</ThemedText>
+              </View>
+            </View>
+            
+            <ThemedView style={styles.storyPromptContainer}>
+              <ThemedText style={styles.storyPrompt}>{currentStory.beginning}</ThemedText>
+            </ThemedView>
+            
+            <View style={styles.keywordsContainer}>
+              <ThemedText style={styles.keywordsTitle}>Suggested Keywords:</ThemedText>
+              <View style={styles.keywordsList}>
+                {currentStory.keywords.map((keyword: string, index: number) => (
+                  <View 
+                    key={index} 
                     style={[
-                      styles.keywordText, 
-                      keywordsUsed.includes(keyword) && styles.usedKeywordText
+                      styles.keywordBadge, 
+                      keywordsUsed.includes(keyword) && styles.usedKeywordBadge
                     ]}
                   >
-                    {keyword}
-                  </ThemedText>
-                </View>
-              ))}
+                    <ThemedText 
+                      style={[
+                        styles.keywordText, 
+                        keywordsUsed.includes(keyword) && styles.usedKeywordText
+                      ]}
+                    >
+                      {keyword}
+                    </ThemedText>
+                  </View>
+                ))}
+              </View>
             </View>
-          </View>
-          
-          <View style={styles.textAreaContainer}>
-            <TextInput
-              ref={inputRef}
-              style={styles.textArea}
-              placeholder="Continue the story here..."
-              value={storyText}
-              onChangeText={setStoryText}
-              multiline
-              numberOfLines={10}
-              textAlignVertical="top"
-              editable={!isSubmitted}
-            />
-          </View>
-          
-          {!isSubmitted ? (
-            <TouchableOpacity 
-              style={styles.submitButton} 
-              onPress={submitStory}
-            >
-              <ThemedText style={styles.submitButtonText}>Submit Story</ThemedText>
-              <FontAwesome name="check" size={16} color="#FFFFFF" />
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.feedbackContainer}>
-              <View style={styles.scoreBreakdown}>
-                <ThemedText style={styles.feedbackTitle}>Your Score</ThemedText>
-                
-                <View style={styles.scoreRow}>
-                  <ThemedText style={styles.scoreLabel}>Word Count:</ThemedText>
-                  <ThemedText style={styles.scoreValue}>
-                    {wordCount >= currentStory.minWords ? 
-                      `${Math.min(Math.floor((wordCount / currentStory.minWords) * 25), 50)}/50` : 
-                      `${Math.floor((wordCount / currentStory.minWords) * 25)}/50`}
-                  </ThemedText>
-                </View>
-                
-                <View style={styles.scoreRow}>
-                  <ThemedText style={styles.scoreLabel}>Keywords Used:</ThemedText>
-                  <ThemedText style={styles.scoreValue}>{Math.min(keywordsUsed.length * 10, 50)}/50</ThemedText>
-                </View>
-                
-                <View style={styles.scoreRow}>
-                  <ThemedText style={styles.scoreLabel}>Time Bonus:</ThemedText>
-                  <ThemedText style={styles.scoreValue}>
-                    {timeLeft > 0 ? Math.min(Math.floor(timeLeft / currentStory.timeLimit * 10), 10) : 0}/10
-                  </ThemedText>
-                </View>
-                
-                <View style={styles.totalScoreRow}>
-                  <ThemedText style={styles.totalScoreLabel}>Total:</ThemedText>
-                  <ThemedText style={styles.totalScoreValue}>
-                    {Math.min(Math.floor((wordCount / currentStory.minWords) * 25), 50) + 
-                     Math.min(keywordsUsed.length * 10, 50) + 
-                     (timeLeft > 0 ? Math.min(Math.floor(timeLeft / currentStory.timeLimit * 10), 10) : 0)}/110
-                  </ThemedText>
-                </View>
-              </View>
-              
-              <View style={styles.feedbackTextContainer}>
-                <ThemedText style={styles.feedbackText}>{feedback}</ThemedText>
-              </View>
-              
-              <TouchableOpacity style={styles.nextButton} onPress={moveToNextStory}>
-                <ThemedText style={styles.nextButtonText}>
-                  {currentStoryIndex < storyPrompts.length - 1 ? "Next Story" : "See Results"}
-                </ThemedText>
-                <FontAwesome name="arrow-right" size={16} color="#FFFFFF" />
+            
+            <View style={styles.textAreaContainer}>
+              <TextInput
+                ref={inputRef}
+                style={styles.textArea}
+                placeholder="Continue the story here..."
+                value={storyText}
+                onChangeText={setStoryText}
+                multiline
+                numberOfLines={10}
+                textAlignVertical="top"
+                editable={!isSubmitted}
+              />
+            </View>
+            
+            {!isSubmitted ? (
+              <TouchableOpacity 
+                style={styles.submitButton} 
+                onPress={submitStory}
+              >
+                <ThemedText style={styles.submitButtonText}>Submit Story</ThemedText>
+                <FontAwesome name="check" size={16} color="#FFFFFF" />
               </TouchableOpacity>
-            </View>
-          )}
-        </ScrollView>
-      </Animated.View>
+            ) : (
+              <View style={styles.feedbackContainer}>
+                <View style={styles.scoreBreakdown}>
+                  <ThemedText style={styles.feedbackTitle}>Your Score</ThemedText>
+                  
+                  <View style={styles.scoreRow}>
+                    <ThemedText style={styles.scoreLabel}>Word Count:</ThemedText>
+                    <ThemedText style={styles.scoreValue}>
+                      {wordCount >= currentStory.minWords ? 
+                        `${Math.min(Math.floor((wordCount / currentStory.minWords) * 25), 50)}/50` : 
+                        `${Math.floor((wordCount / currentStory.minWords) * 25)}/50`}
+                    </ThemedText>
+                  </View>
+                  
+                  <View style={styles.scoreRow}>
+                    <ThemedText style={styles.scoreLabel}>Keywords Used:</ThemedText>
+                    <ThemedText style={styles.scoreValue}>{Math.min(keywordsUsed.length * 10, 50)}/50</ThemedText>
+                  </View>
+                  
+                  <View style={styles.scoreRow}>
+                    <ThemedText style={styles.scoreLabel}>Time Bonus:</ThemedText>
+                    <ThemedText style={styles.scoreValue}>
+                      {timeLeft > 0 ? Math.min(Math.floor(timeLeft / currentStory.timeLimit * 10), 10) : 0}/10
+                    </ThemedText>
+                  </View>
+                  
+                  <View style={styles.totalScoreRow}>
+                    <ThemedText style={styles.totalScoreLabel}>Total:</ThemedText>
+                    <ThemedText style={styles.totalScoreValue}>
+                      {Math.min(Math.floor((wordCount / currentStory.minWords) * 25), 50) + 
+                       Math.min(keywordsUsed.length * 10, 50) + 
+                       (timeLeft > 0 ? Math.min(Math.floor(timeLeft / currentStory.timeLimit * 10), 10) : 0)}/110
+                    </ThemedText>
+                  </View>
+                </View>
+                
+                <View style={styles.feedbackTextContainer}>
+                  <ThemedText style={styles.feedbackText}>{feedback}</ThemedText>
+                </View>
+                
+                <TouchableOpacity style={styles.nextButton} onPress={moveToNextStory}>
+                  <ThemedText style={styles.nextButtonText}>
+                    {currentStoryIndex < storyPrompts.length - 1 ? "Next Story" : "See Results"}
+                  </ThemedText>
+                  <FontAwesome name="arrow-right" size={16} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            )}
+          </ScrollView>
+        </Animated.View>
+      </FeatureAccessWrapper>
     </View>
   );
 }

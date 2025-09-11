@@ -8,11 +8,16 @@ import ChatButton from '@/components/ChatButton';
 import Header from '@/components/Header';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
+import FeatureAccessWrapper from '../components/FeatureAccessWrapper';
+import { useFeatureAccess } from '../hooks/useFeatureAccess';
 
 export default function GameScreen() {
   const navigation = useNavigation();
   const [chatExpanded, setChatExpanded] = useState(false);
   const scrollViewRef = useRef(null);
+
+  // Feature access control
+  const { canAccess: canPlayGames, featureInfo: gameFeatureInfo } = useFeatureAccess('games');
 
   const toggleChat = () => {
     setChatExpanded(!chatExpanded);
@@ -67,6 +72,12 @@ export default function GameScreen() {
         </View>
 
         {/* Game Cards */}
+        <FeatureAccessWrapper
+          featureKey="games"
+          fallback={null}
+          style={styles.container}
+          navigation={navigation}
+        >
         <View style={styles.gameContainer}>
           <TouchableOpacity activeOpacity={0.8} onPress={() => navigateToGame('identification')}>
             <ThemedView style={styles.gameCard}>
@@ -186,6 +197,7 @@ export default function GameScreen() {
             </ThemedView>
           </TouchableOpacity>
         </View>
+        </FeatureAccessWrapper>
 
         {/* Daily Challenges Section */}
         <View style={styles.sectionHeader}>

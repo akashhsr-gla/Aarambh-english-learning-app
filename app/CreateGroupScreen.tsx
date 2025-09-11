@@ -2,11 +2,13 @@ import { FontAwesome } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Switch, TextInput, TouchableOpacity, View, ActivityIndicator } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, TextInput, TouchableOpacity, View } from 'react-native';
 
 import GameHeader from '../components/GameHeader';
 import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
+import FeatureAccessWrapper from './components/FeatureAccessWrapper';
+import { useFeatureAccess } from './hooks/useFeatureAccess';
 import { groupsAPI } from './services/api';
 
 export default function CreateGroupScreen() {
@@ -18,6 +20,9 @@ export default function CreateGroupScreen() {
   const [isPrivate, setIsPrivate] = useState(false);
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Feature access control
+  const { canAccess: canCreateGroups, featureInfo: groupFeatureInfo } = useFeatureAccess('group_calls');
   
   const handleCreateGroup = async () => {
     // Validate inputs
@@ -95,6 +100,12 @@ export default function CreateGroupScreen() {
       
       <GameHeader title="Create Group Discussion" showBackButton onBackPress={() => navigation.goBack()} />
       
+      <FeatureAccessWrapper
+        featureKey="group_calls"
+        fallback={null}
+        style={styles.container}
+        navigation={navigation}
+      >
       <ScrollView style={styles.contentContainer} contentContainerStyle={styles.scrollContent}>
         <ThemedView style={styles.formCard}>
           <View style={styles.formSection}>
@@ -240,6 +251,7 @@ export default function CreateGroupScreen() {
           </ThemedText>
         </View>
       </ScrollView>
+      </FeatureAccessWrapper>
       
       <View style={styles.footer}>
         <TouchableOpacity 

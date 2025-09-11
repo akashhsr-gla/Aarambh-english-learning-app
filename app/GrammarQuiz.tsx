@@ -7,6 +7,8 @@ import { ActivityIndicator, Alert, Animated, Dimensions, ScrollView, StyleSheet,
 import GameHeader from '../components/GameHeader';
 import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
+import FeatureAccessWrapper from './components/FeatureAccessWrapper';
+import { useFeatureAccess } from './hooks/useFeatureAccess';
 import { gamesAPI } from './services/api';
 
 const { width } = Dimensions.get('window');
@@ -46,6 +48,9 @@ export default function GrammarQuiz() {
   const [filterType, setFilterType] = useState<FilterType>('all');
   const [selectedExam, setSelectedExam] = useState<ExamType>('all');
   const [selectedProfession, setSelectedProfession] = useState<ProfessionType>('all');
+
+  // Feature access control
+  const { canAccess: canPlayGames, featureInfo: gameFeatureInfo } = useFeatureAccess('games');
 
   const currentQuestion = quizData[currentQuestionIndex];
 
@@ -292,8 +297,14 @@ export default function GrammarQuiz() {
       
       <GameHeader title="Grammar Quiz" showBackButton onBackPress={() => navigation.goBack()} />
       
-      {/* Filter Section */}
-      <View style={styles.filterContainer}>
+      <FeatureAccessWrapper
+        featureKey="games"
+        fallback={null}
+        style={styles.container}
+        navigation={navigation}
+      >
+        {/* Filter Section */}
+        <View style={styles.filterContainer}>
         <TouchableOpacity 
           style={styles.filterButton}
           onPress={() => setFilterOpen(!filterOpen)}
@@ -482,6 +493,7 @@ export default function GrammarQuiz() {
           </Animated.View>
         )}
       </ScrollView>
+      </FeatureAccessWrapper>
     </View>
   );
 }

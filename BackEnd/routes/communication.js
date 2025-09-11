@@ -51,23 +51,10 @@ router.post('/matchmaking/find-partner', authenticateToken, [
       });
     }
 
-    // Find available partners in the same region
-    let partnerQuery = {
-      _id: { $ne: req.user._id }, // Exclude current user
-      region: currentUser.region._id,
-      isActive: true,
-      role: 'student' // Only match students for language practice
-    };
-
-    // Add language level filter if specified
-    if (preferredLanguageLevel) {
-      partnerQuery['studentInfo.languageLevel'] = preferredLanguageLevel;
-    }
-
     // Check if user is already in an active session
     const existingSession = await Session.findOne({
       'participants.user': req.user._id,
-      status: { $in: ['active', 'scheduled'] },
+      status: { $in: ['active', 'scheduled', 'waiting_for_partner'] },
       sessionType: { $in: ['chat', 'voice_call', 'video_call'] }
     });
 
@@ -81,108 +68,119 @@ router.post('/matchmaking/find-partner', authenticateToken, [
       });
     }
 
-    // Find potential partners not currently in active sessions
-    const busyUserIds = await Session.distinct('participants.user', {
-      status: { $in: ['active', 'scheduled'] },
-      sessionType: { $in: ['chat', 'voice_call', 'video_call'] }
-    });
+    // STEP 1: Check if there's an existing waiting session we can join
+    const waitingSession = await Session.findOne({
+      sessionType: sessionType,
+      status: 'waiting_for_partner',
+      'participants.user': { $ne: req.user._id }, // Not created by current user
+      'hostRegion': currentUser.region._id // Same region
+    }).populate('participants.user', 'name email profilePicture studentInfo.languageLevel');
 
-    partnerQuery._id = { $ne: req.user._id, $nin: busyUserIds };
-
-    const availablePartners = await User.find(partnerQuery)
-      .select('name email profilePicture studentInfo.languageLevel lastActive')
-      .sort({ lastActive: -1 }) // Prioritize recently active users
-      .limit(10);
-
-    if (availablePartners.length === 0) {
+    if (waitingSession) {
+      // Found someone waiting! Join their session
+      
+      // Add current user as participant
+      waitingSession.participants.push({
+        user: req.user._id,
+        role: 'participant', 
+        joinedAt: new Date(),
+        isActive: true
+      });
+      
+      // Update session status to active
+      waitingSession.status = 'active';
+      waitingSession.startedAt = new Date();
+      
+      await waitingSession.save();
+      
+      // Get the waiting partner info
+      const waitingPartner = waitingSession.participants[0].user;
+      
       return res.json({
         success: true,
-        message: 'No available partners found in your region',
+        message: 'Connected to waiting partner!',
         data: {
-          partner: null,
-          waitingInQueue: true,
-          regionInfo: {
-            name: currentUser.region.name,
-            code: currentUser.region.code
-          }
-        }
-      });
-    }
-
-    // Select a random partner from available options
-    const selectedPartner = availablePartners[Math.floor(Math.random() * availablePartners.length)];
-
-    // Create a session immediately for chat, or return partner info for calls
-    let session = null;
-    if (sessionType === 'chat') {
-      // For chat, create the session immediately
-      session = new Session({
-        sessionId: `chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        sessionType: 'chat',
-        title: `Chat Session`,
-        description: `Region-based chat between ${currentUser.name} and ${selectedPartner.name}`,
-        host: req.user._id,
-        participants: [
-          {
-            user: req.user._id,
-            role: 'host',
-            joinedAt: new Date(),
-            isActive: true
+          partner: {
+            id: waitingPartner._id,
+            name: waitingPartner.name,
+            email: waitingPartner.email,
+            profilePicture: waitingPartner.profilePicture,
+            languageLevel: waitingPartner.studentInfo?.languageLevel || 'beginner',
+            lastActive: waitingPartner.lastActive
           },
-          {
-            user: selectedPartner._id,
-            role: 'participant',
-            joinedAt: new Date(),
-            isActive: false // Partner hasn't joined yet
+          session: {
+            id: waitingSession._id,
+            sessionId: waitingSession.sessionId,
+            sessionType: waitingSession.sessionType,
+            title: waitingSession.title,
+            status: waitingSession.status
           }
-        ],
-        status: 'scheduled',
-        scheduledAt: new Date(),
-        chatSession: {
-          messages: [],
-          totalMessages: 0,
-          lastMessageAt: null
         }
       });
-
-      await session.save();
     }
 
+    // STEP 2: No one waiting, create a new waiting session
+    
+    const session = new Session({
+      sessionId: `chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      sessionType: sessionType,
+      title: `${sessionType === 'chat' ? 'Chat' : 'Call'} Session`,
+      description: `Waiting for partner in ${currentUser.region.name}`,
+      host: req.user._id,
+      hostRegion: currentUser.region._id, // Store region for matching
+      participants: [
+        {
+          user: req.user._id,
+          role: 'host',
+          joinedAt: new Date(),
+          isActive: true
+        }
+      ],
+      status: 'waiting_for_partner', // New status for waiting
+      scheduledAt: new Date(),
+      chatSession: sessionType === 'chat' ? {
+        messages: [],
+        totalMessages: 0,
+        lastMessageAt: null
+      } : undefined,
+      callSession: (sessionType === 'voice_call' || sessionType === 'video_call') ? {
+        callType: sessionType === 'voice_call' ? 'voice' : 'video',
+        signaling: {
+          iceCandidates: []
+        }
+      } : undefined
+    });
+
+    await session.save();
+
+    // Return waiting status - no partner yet
     res.json({
       success: true,
-      message: sessionType === 'chat' ? 'Chat partner found and session created' : 'Call partner found',
+      message: 'Waiting for a partner from your region...',
       data: {
-        partner: {
-          id: selectedPartner._id,
-          name: selectedPartner.name,
-          email: selectedPartner.email,
-          profilePicture: selectedPartner.profilePicture,
-          languageLevel: selectedPartner.studentInfo?.languageLevel || 'beginner',
-          lastActive: selectedPartner.lastActive
-        },
-        session: session ? {
+        partner: null,
+        waitingInQueue: true,
+        session: {
           id: session._id,
           sessionId: session.sessionId,
           sessionType: session.sessionType,
           title: session.title,
           status: session.status
-        } : null,
+        },
         regionInfo: {
           name: currentUser.region.name,
           code: currentUser.region.code
-        },
-        matchingCriteria: {
-          region: currentUser.region.name,
-          languageLevel: preferredLanguageLevel || 'any'
         }
       }
     });
 
   } catch (error) {
     console.error('Find partner error:', error);
+    console.error('Error stack:', error.stack);
     res.status(500).json({
       success: false,
-      message: 'Server error during matchmaking'
+      message: 'Server error during matchmaking',
+      error: error.message
     });
   }
 });
@@ -509,75 +507,60 @@ router.post('/call/:sessionId/join', authenticateToken, async (req, res) => {
 router.post('/call/:sessionId/leave', authenticateToken, async (req, res) => {
   try {
     const { sessionId } = req.params;
+    console.log('Leave session request:', { sessionId, userId: req.user._id });
 
     const session = await Session.findById(sessionId);
     if (!session) {
+      console.log('Session not found:', sessionId);
       return res.status(404).json({
         success: false,
-        message: 'Call session not found'
+        message: 'Session not found'
       });
     }
 
-    // Find participant
-    const participant = session.participants.find(p => 
-      p.user.toString() === req.user._id.toString()
-    );
+    console.log('Found session:', session._id, 'Status:', session.status);
 
-    if (!participant) {
-      return res.status(403).json({
-        success: false,
-        message: 'You are not a participant in this call'
-      });
+    // Mark the participant as left
+    const participant = session.participants.find(p => p.user.toString() === req.user._id.toString());
+    if (participant) {
+      participant.isActive = false;
+      participant.leftAt = new Date();
     }
 
-    // Update participant status
-    participant.isActive = false;
-    participant.leftAt = new Date();
-    participant.duration = Math.round((participant.leftAt - participant.joinedAt) / 1000);
+    // Immediately complete the session when any participant leaves so the other side detects it
+    session.status = 'completed';
+    session.endedAt = new Date();
 
-    // Check if host is leaving
-    if (participant.role === 'host') {
-      // Transfer host role to next active participant
-      const nextHost = session.participants.find(p => 
-        p.user.toString() !== req.user._id.toString() && p.isActive
-      );
-      
-      if (nextHost) {
-        nextHost.role = 'host';
-        session.host = nextHost.user;
-      } else {
-        // No more active participants, end session
-        session.status = 'completed';
-        session.endedAt = new Date();
-        session.duration = Math.round((session.endedAt - session.startedAt) / 1000);
-      }
-    }
-
-    // Check if no more active participants
-    const activeParticipants = session.participants.filter(p => p.isActive);
-    if (activeParticipants.length === 0) {
-      session.status = 'completed';
-      session.endedAt = new Date();
+    // Calculate duration if session was started
+    if (session.startedAt) {
       session.duration = Math.round((session.endedAt - session.startedAt) / 1000);
     }
 
     await session.save();
+    console.log('Session marked as completed by user leaving');
 
     res.json({
       success: true,
-      message: 'Successfully left call session',
+      message: 'Successfully left session',
       data: {
         sessionId: session._id,
         status: session.status,
-        duration: participant.duration
+        duration: session.duration || 0
       }
     });
 
   } catch (error) {
-    console.error('Leave call error:', error);
+    console.error('Leave session error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      sessionId: req.params.sessionId,
+      userId: req.user._id
+    });
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: 'Server error',
+      details: error.message
     });
   }
 });
@@ -1171,6 +1154,504 @@ router.get('/admin/sessions', authenticateToken, async (req, res) => {
       success: false,
       message: 'Server error'
     });
+  }
+});
+
+// 8. GET USER'S ACTIVE SESSIONS
+router.get('/sessions/active', authenticateToken, async (req, res) => {
+  try {
+    // Prevent any caching so clients always see up-to-date session state
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    res.set('Surrogate-Control', 'no-store');
+
+    const activeSessions = await Session.find({
+      'participants.user': req.user._id,
+      status: { $in: ['active', 'scheduled', 'waiting_for_partner'] },
+      sessionType: { $in: ['chat', 'voice_call', 'video_call'] }
+    })
+    .populate('participants.user', 'name email profilePicture')
+    .populate('host', 'name email')
+    .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      message: 'Active sessions retrieved successfully',
+      data: {
+        sessions: activeSessions.map(session => ({
+          _id: session._id,
+          sessionId: session.sessionId,
+          sessionType: session.sessionType,
+          title: session.title,
+          description: session.description,
+          status: session.status,
+          participants: session.participants.map(p => ({
+            user: p.user,
+            role: p.role,
+            isActive: p.isActive,
+            joinedAt: p.joinedAt
+          })),
+          host: session.host,
+          scheduledAt: session.scheduledAt,
+          startedAt: session.startedAt,
+          createdAt: session.createdAt
+        }))
+      }
+    });
+
+  } catch (error) {
+    console.error('Get active sessions error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// 13. CANCEL ALL USER SESSIONS (strict cancel for pending/active)
+router.post('/sessions/cancel-all', authenticateToken, async (req, res) => {
+  try {
+    const now = new Date();
+
+    const sessions = await Session.find({
+      'participants.user': req.user._id,
+      status: { $in: ['waiting_for_partner', 'active', 'scheduled'] },
+      sessionType: { $in: ['chat', 'voice_call', 'video_call'] }
+    });
+
+    let affected = 0;
+    const cancelledWaiting = [];
+    const completedActive = [];
+    const updatedSessions = [];
+    for (const session of sessions) {
+      const me = session.participants.find(p => p.user.toString() === req.user._id.toString());
+      if (me) {
+        me.isActive = false;
+        me.leftAt = now;
+      }
+      if (session.status !== 'completed' && session.status !== 'cancelled') {
+        if (session.status === 'waiting_for_partner') {
+          session.status = 'cancelled';
+          cancelledWaiting.push(session._id);
+        } else {
+          session.status = 'completed';
+          completedActive.push(session._id);
+        }
+        session.endedAt = now;
+        if (session.startedAt) {
+          session.duration = Math.round((session.endedAt - session.startedAt) / 1000);
+        }
+      }
+      await session.save();
+      updatedSessions.push({ id: session._id, status: session.status, type: session.sessionType });
+      affected += 1;
+    }
+
+    return res.json({
+      success: true,
+      message: 'All user sessions cancelled/completed',
+      data: { count: affected, cancelledWaiting, completedActive, updatedSessions }
+    });
+  } catch (error) {
+    console.error('Cancel all sessions error:', error);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// 14. HARD PURGE USER SESSIONS (deletes waiting, detaches user, completes orphaned)
+router.post('/sessions/purge-hard', authenticateToken, async (req, res) => {
+  try {
+    const now = new Date();
+    const sessions = await Session.find({
+      'participants.user': req.user._id,
+      status: { $in: ['waiting_for_partner', 'active', 'scheduled'] },
+      sessionType: { $in: ['chat', 'voice_call', 'video_call'] }
+    });
+
+    let deletedWaiting = 0;
+    let detachedFrom = 0;
+    const completedOrphans = [];
+    const details = [];
+
+    for (const session of sessions) {
+      if (session.status === 'waiting_for_partner') {
+        await Session.deleteOne({ _id: session._id });
+        deletedWaiting += 1;
+        details.push({ id: session._id, action: 'deleted_waiting' });
+        continue;
+      }
+
+      // Detach current user
+      const beforeCount = session.participants.length;
+      session.participants = session.participants.filter(p => p.user.toString() !== req.user._id.toString());
+      if (session.participants.length !== beforeCount) {
+        detachedFrom += 1;
+      }
+
+      // If no participants left or none active, complete and close
+      const anyActive = session.participants.some(p => p.isActive);
+      if (session.participants.length === 0 || !anyActive) {
+        session.status = 'completed';
+        session.endedAt = now;
+        if (session.startedAt) {
+          session.duration = Math.round((session.endedAt - session.startedAt) / 1000);
+        }
+        completedOrphans.push(session._id);
+        details.push({ id: session._id, action: 'completed_orphan' });
+        await session.save();
+        continue;
+      }
+
+      details.push({ id: session._id, action: 'detached_user', remainingParticipants: session.participants.length });
+      await session.save();
+    }
+
+    return res.json({
+      success: true,
+      message: 'Hard purge completed',
+      data: {
+        deletedWaiting,
+        detachedFrom,
+        completedOrphans,
+        totalProcessed: sessions.length,
+        details
+      }
+    });
+  } catch (error) {
+    console.error('Purge hard sessions error:', error);
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// 15. WEBRTC SIGNALING ENDPOINTS
+// Get signaling snapshot
+router.get('/session/:sessionId/webrtc', authenticateToken, async (req, res) => {
+  try {
+    // Disable caching so clients never get 304 for signaling snapshot
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    res.set('Surrogate-Control', 'no-store');
+
+    const session = await Session.findById(req.params.sessionId);
+    if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
+    return res.json({
+      success: true,
+      data: {
+        signaling: session.callSession?.signaling || { iceCandidates: [] }
+      }
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Post offer
+router.post('/session/:sessionId/webrtc/offer', authenticateToken, async (req, res) => {
+  try {
+    const { type, sdp } = req.body || {};
+    const session = await Session.findById(req.params.sessionId);
+    if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
+    if (!session.callSession) session.callSession = {};
+    if (!session.callSession.signaling) session.callSession.signaling = { iceCandidates: [] };
+    session.callSession.signaling.offer = { from: req.user._id, type, sdp, createdAt: new Date() };
+    await session.save();
+    return res.json({ success: true });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Post answer
+router.post('/session/:sessionId/webrtc/answer', authenticateToken, async (req, res) => {
+  try {
+    const { type, sdp } = req.body || {};
+    const session = await Session.findById(req.params.sessionId);
+    if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
+    if (!session.callSession) session.callSession = {};
+    if (!session.callSession.signaling) session.callSession.signaling = { iceCandidates: [] };
+    session.callSession.signaling.answer = { from: req.user._id, type, sdp, createdAt: new Date() };
+    await session.save();
+    return res.json({ success: true });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Add ICE candidate
+router.post('/session/:sessionId/webrtc/ice', authenticateToken, async (req, res) => {
+  try {
+    const { candidate, sdpMid, sdpMLineIndex } = req.body || {};
+    const session = await Session.findById(req.params.sessionId);
+    if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
+    if (!session.callSession) session.callSession = {};
+    if (!session.callSession.signaling) session.callSession.signaling = { iceCandidates: [] };
+    session.callSession.signaling.iceCandidates.push({ from: req.user._id, candidate, sdpMid, sdpMLineIndex, createdAt: new Date() });
+    await session.save();
+    return res.json({ success: true });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Clear signaling (on cancel/end)
+router.post('/session/:sessionId/webrtc/clear', authenticateToken, async (req, res) => {
+  try {
+    const session = await Session.findById(req.params.sessionId);
+    if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
+    if (!session.callSession) session.callSession = {};
+    session.callSession.signaling = { iceCandidates: [] };
+    await session.save();
+    return res.json({ success: true });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Request video upgrade (voice -> video)
+router.post('/session/:sessionId/request-video', authenticateToken, async (req, res) => {
+  try {
+    const session = await Session.findById(req.params.sessionId);
+    if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
+    
+    const currentUser = session.participants.find(p => p.user.toString() === req.user._id.toString());
+    const otherUser = session.participants.find(p => p.user.toString() !== req.user._id.toString());
+    
+    if (!currentUser || !otherUser) {
+      return res.status(403).json({ success: false, message: 'Not a participant in this session' });
+    }
+    
+    if (!session.callSession) session.callSession = {};
+    session.callSession.videoUpgradeRequest = {
+      from: req.user._id,
+      to: otherUser.user,
+      status: 'pending',
+      requestedAt: new Date()
+    };
+    
+    await session.save();
+    return res.json({ success: true, message: 'Video upgrade request sent' });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Respond to video upgrade request
+router.post('/session/:sessionId/respond-video', authenticateToken, async (req, res) => {
+  try {
+    const { accept } = req.body; // true/false
+    const session = await Session.findById(req.params.sessionId);
+    if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
+    
+    const videoRequest = session.callSession?.videoUpgradeRequest;
+    if (!videoRequest || videoRequest.to.toString() !== req.user._id.toString()) {
+      return res.status(400).json({ success: false, message: 'No pending video request for you' });
+    }
+    
+    videoRequest.status = accept ? 'accepted' : 'rejected';
+    
+    if (accept) {
+      // Upgrade session to video_call
+      session.sessionType = 'video_call';
+      session.callSession.callType = 'video';
+      
+      // Enable camera for both participants
+      session.participants.forEach(p => {
+        p.cameraEnabled = true;
+      });
+      
+      // Clear the video upgrade request after accepting
+      session.callSession.videoUpgradeRequest = undefined;
+    } else {
+      // Clear the video upgrade request after rejecting
+      session.callSession.videoUpgradeRequest = undefined;
+    }
+    
+    await session.save();
+    return res.json({ 
+      success: true, 
+      message: accept ? 'Video upgrade accepted' : 'Video upgrade rejected',
+      data: { upgraded: accept, sessionType: session.sessionType }
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Check for video upgrade requests
+router.get('/session/:sessionId/video-request', authenticateToken, async (req, res) => {
+  try {
+    // Disable caching so clients never get stale 304s for video-request
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    res.set('Surrogate-Control', 'no-store');
+
+    const session = await Session.findById(req.params.sessionId);
+    if (!session) return res.status(404).json({ success: false, message: 'Session not found' });
+    
+    const videoRequest = session.callSession?.videoUpgradeRequest;
+    console.log('Video request check - sessionId:', req.params.sessionId, 'userId:', req.user._id, 'videoRequest:', videoRequest);
+    
+    const hasPendingRequest = videoRequest && 
+      videoRequest.to && 
+      videoRequest.to.toString() === req.user._id.toString() && 
+      videoRequest.status === 'pending';
+    
+    return res.json({
+      success: true,
+      data: {
+        hasPendingRequest: hasPendingRequest || false,
+        request: hasPendingRequest ? {
+          from: videoRequest.from,
+          requestedAt: videoRequest.requestedAt
+        } : null
+      }
+    });
+  } catch (e) {
+    console.error('Video request check error:', e);
+    return res.status(500).json({ success: false, message: 'Server error', error: e.message });
+  }
+});
+
+// 16. GROUP WEBRTC SIGNALING ENDPOINTS
+// Get group signaling snapshot
+router.get('/group/:groupId/webrtc', authenticateToken, async (req, res) => {
+  try {
+    // Disable caching so clients never get 304 for signaling snapshot
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    res.set('Surrogate-Control', 'no-store');
+
+    const Group = require('../models/Group');
+    const group = await Group.findById(req.params.groupId);
+    if (!group) return res.status(404).json({ success: false, message: 'Group not found' });
+    
+    // Check if user is a participant
+    const isParticipant = group.participants.some(p => 
+      p.user.toString() === req.user._id.toString()
+    );
+    
+    if (!isParticipant) {
+      return res.status(403).json({ success: false, message: 'Not a participant in this group' });
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        signaling: group.groupSession?.signaling || { iceCandidates: [] }
+      }
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Post group offer
+router.post('/group/:groupId/webrtc/offer', authenticateToken, async (req, res) => {
+  try {
+    const { type, sdp } = req.body || {};
+    const Group = require('../models/Group');
+    const group = await Group.findById(req.params.groupId);
+    if (!group) return res.status(404).json({ success: false, message: 'Group not found' });
+    
+    // Check if user is a participant
+    const isParticipant = group.participants.some(p => 
+      p.user.toString() === req.user._id.toString()
+    );
+    
+    if (!isParticipant) {
+      return res.status(403).json({ success: false, message: 'Not a participant in this group' });
+    }
+
+    if (!group.groupSession) group.groupSession = {};
+    if (!group.groupSession.signaling) group.groupSession.signaling = { iceCandidates: [] };
+    group.groupSession.signaling.offer = { from: req.user._id, type, sdp, createdAt: new Date() };
+    await group.save();
+    return res.json({ success: true });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Post group answer
+router.post('/group/:groupId/webrtc/answer', authenticateToken, async (req, res) => {
+  try {
+    const { type, sdp } = req.body || {};
+    const Group = require('../models/Group');
+    const group = await Group.findById(req.params.groupId);
+    if (!group) return res.status(404).json({ success: false, message: 'Group not found' });
+    
+    // Check if user is a participant
+    const isParticipant = group.participants.some(p => 
+      p.user.toString() === req.user._id.toString()
+    );
+    
+    if (!isParticipant) {
+      return res.status(403).json({ success: false, message: 'Not a participant in this group' });
+    }
+
+    if (!group.groupSession) group.groupSession = {};
+    if (!group.groupSession.signaling) group.groupSession.signaling = { iceCandidates: [] };
+    group.groupSession.signaling.answer = { from: req.user._id, type, sdp, createdAt: new Date() };
+    await group.save();
+    return res.json({ success: true });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Add group ICE candidate
+router.post('/group/:groupId/webrtc/ice', authenticateToken, async (req, res) => {
+  try {
+    const { candidate, sdpMid, sdpMLineIndex } = req.body || {};
+    const Group = require('../models/Group');
+    const group = await Group.findById(req.params.groupId);
+    if (!group) return res.status(404).json({ success: false, message: 'Group not found' });
+    
+    // Check if user is a participant
+    const isParticipant = group.participants.some(p => 
+      p.user.toString() === req.user._id.toString()
+    );
+    
+    if (!isParticipant) {
+      return res.status(403).json({ success: false, message: 'Not a participant in this group' });
+    }
+
+    if (!group.groupSession) group.groupSession = {};
+    if (!group.groupSession.signaling) group.groupSession.signaling = { iceCandidates: [] };
+    group.groupSession.signaling.iceCandidates.push({ from: req.user._id, candidate, sdpMid, sdpMLineIndex, createdAt: new Date() });
+    await group.save();
+    return res.json({ success: true });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: 'Server error' });
+  }
+});
+
+// Clear group signaling (on cancel/end)
+router.post('/group/:groupId/webrtc/clear', authenticateToken, async (req, res) => {
+  try {
+    const Group = require('../models/Group');
+    const group = await Group.findById(req.params.groupId);
+    if (!group) return res.status(404).json({ success: false, message: 'Group not found' });
+    
+    // Check if user is a participant
+    const isParticipant = group.participants.some(p => 
+      p.user.toString() === req.user._id.toString()
+    );
+    
+    if (!isParticipant) {
+      return res.status(403).json({ success: false, message: 'Not a participant in this group' });
+    }
+
+    if (!group.groupSession) group.groupSession = {};
+    group.groupSession.signaling = { iceCandidates: [] };
+    await group.save();
+    return res.json({ success: true });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 

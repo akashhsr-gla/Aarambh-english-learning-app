@@ -13,8 +13,11 @@ let API_BASE_URL;
 if (Platform.OS === 'android') {
   // Android emulator uses 10.0.2.2 to access host machine's localhost
   API_BASE_URL = 'http://10.0.2.2:5000/api';
+} else if (Platform.OS === 'web') {
+  // Web platform uses localhost
+  API_BASE_URL = 'http://localhost:5000/api';
 } else {
-  // iOS simulator and web can use localhost
+  // iOS simulator and other platforms use localhost
   API_BASE_URL = 'http://localhost:5000/api';
 }
 
@@ -22,22 +25,70 @@ if (Platform.OS === 'android') {
 const apiRequest = async (endpoint, options = {}) => {
   const url = `${API_BASE_URL}${endpoint}`;
   
+  console.log('🌐 API Request:', {
+    platform: Platform.OS,
+    baseUrl: API_BASE_URL,
+    endpoint,
+    fullUrl: url
+  });
+  
   const defaultOptions = {
     headers: {
       'Content-Type': 'application/json',
+      'Accept': 'application/json, text/plain, */*',
       ...options.headers,
     },
   };
 
   // Add authorization header if token exists
   const token = await getStoredToken();
+  console.log('🔑 Retrieved token:', token ? `${token.substring(0, 20)}...` : 'No token');
   if (token) {
     defaultOptions.headers.Authorization = `Bearer ${token}`;
   }
 
   try {
+    console.log('📡 Making fetch request to:', url);
+    console.log('📡 Request options:', { ...defaultOptions, ...options });
+    
     const response = await fetch(url, { ...defaultOptions, ...options });
-    const data = await response.json();
+    console.log('📡 Response received:', {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok,
+      headers: Object.fromEntries(response.headers.entries())
+    });
+    
+    // Handle empty bodies (204/304) gracefully and avoid double-reading the body
+    if (response.status === 204 || response.status === 304) {
+      if (!response.ok) {
+        throw new Error(response.status === 304 ? 'Not modified' : 'No content');
+      }
+      return { success: true };
+    }
+
+    // Clone the response so we can safely inspect text if JSON parsing fails
+    const responseClone = response.clone();
+    let data;
+    try {
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        data = await response.json();
+      } else {
+        const text = await response.text();
+        try { data = JSON.parse(text); } catch { data = { raw: text }; }
+      }
+      console.log('📡 Response data:', data);
+    } catch (jsonError) {
+      console.error('❌ JSON Parse Error:', jsonError);
+      try {
+        const responseText = await responseClone.text();
+        console.error('❌ Raw response text:', responseText);
+        throw new Error(`Invalid JSON response: ${responseText.substring(0, 100)}...`);
+      } catch (textErr) {
+        throw new Error('Invalid JSON response and body could not be read');
+      }
+    }
     
     if (!response.ok) {
       throw new Error(data.message || 'API request failed');
@@ -45,7 +96,13 @@ const apiRequest = async (endpoint, options = {}) => {
     
     return data;
   } catch (error) {
-    console.error('API Error:', error);
+    console.error('❌ API Error Details:', {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+      url: url,
+      platform: Platform.OS
+    });
     throw error;
   }
 };
@@ -55,11 +112,11 @@ const getStoredToken = async () => {
   try {
     if (Platform.OS === 'web') {
       return typeof window !== 'undefined' ? window.localStorage.getItem('authToken') : null;
-    }
-    if (AsyncStorage && AsyncStorage.getItem) {
+    } else if (AsyncStorage && AsyncStorage.getItem) {
       return await AsyncStorage.getItem('authToken');
+    } else {
+      return global.authToken || null;
     }
-    return global.authToken || null;
   } catch (err) {
     console.error('Error getting stored token:', err);
     return null;
@@ -325,6 +382,79 @@ export const communicationAPI = {
   getSessionDetails: async (sessionId) => {
     return await apiRequest(`/communication/session/${sessionId}`);
   },
+
+  // WebRTC signaling
+  getSignaling: async (sessionId) => {
+    const ts = Date.now();
+    return await apiRequest(`/communication/session/${sessionId}/webrtc?_=${ts}`);
+  },
+  postOffer: async (sessionId, offer) => {
+    return await apiRequest(`/communication/session/${sessionId}/webrtc/offer`, {
+      method: 'POST',
+      body: JSON.stringify(offer),
+    });
+  },
+  postAnswer: async (sessionId, answer) => {
+    return await apiRequest(`/communication/session/${sessionId}/webrtc/answer`, {
+      method: 'POST',
+      body: JSON.stringify(answer),
+    });
+  },
+  postIce: async (sessionId, ice) => {
+    return await apiRequest(`/communication/session/${sessionId}/webrtc/ice`, {
+      method: 'POST',
+      body: JSON.stringify(ice),
+    });
+  },
+  clearSignaling: async (sessionId) => {
+    return await apiRequest(`/communication/session/${sessionId}/webrtc/clear`, {
+      method: 'POST',
+    });
+  },
+
+  // Video upgrade endpoints
+  requestVideoUpgrade: async (sessionId) => {
+    return await apiRequest(`/communication/session/${sessionId}/request-video`, {
+      method: 'POST',
+    });
+  },
+
+  respondToVideoUpgrade: async (sessionId, accept) => {
+    return await apiRequest(`/communication/session/${sessionId}/respond-video`, {
+      method: 'POST',
+      body: JSON.stringify({ accept }),
+    });
+  },
+
+  checkVideoRequest: async (sessionId) => {
+    const ts = Date.now();
+    return await apiRequest(`/communication/session/${sessionId}/video-request?_=${ts}`);
+  },
+
+  // Get user's active sessions
+  getActiveSessions: async () => {
+    const ts = Date.now();
+    return await apiRequest(`/communication/sessions/active?_=${ts}`);
+  },
+
+  // Leave/end a session
+  leaveSession: async (sessionId) => {
+    return await apiRequest(`/communication/call/${sessionId}/leave`, {
+      method: 'POST'
+    });
+  },
+  // Strict cancel: server cancels all pending/active sessions for current user
+  cancelAllSessions: async () => {
+    return await apiRequest('/communication/sessions/cancel-all', {
+      method: 'POST'
+    });
+  },
+  // Hard purge: delete waiting sessions and detach user from others
+  purgeAllSessionsHard: async () => {
+    return await apiRequest('/communication/sessions/purge-hard', {
+      method: 'POST'
+    });
+  },
 };
 
 // Sessions API
@@ -565,9 +695,45 @@ export const groupsAPI = {
     });
   },
 
+  // End group session (host only)
+  endSession: async (groupId) => {
+    return await apiRequest(`/groups/${groupId}/end-session`, {
+      method: 'POST',
+    });
+  },
+
   // Get user's active groups
   getActiveGroups: async () => {
     return await apiRequest('/groups/my/active');
+  },
+
+  // Group WebRTC signaling
+  getGroupSignaling: async (groupId) => {
+    const ts = Date.now();
+    return await apiRequest(`/communication/group/${groupId}/webrtc?_=${ts}`);
+  },
+  postGroupOffer: async (groupId, offer) => {
+    return await apiRequest(`/communication/group/${groupId}/webrtc/offer`, {
+      method: 'POST',
+      body: JSON.stringify(offer),
+    });
+  },
+  postGroupAnswer: async (groupId, answer) => {
+    return await apiRequest(`/communication/group/${groupId}/webrtc/answer`, {
+      method: 'POST',
+      body: JSON.stringify(answer),
+    });
+  },
+  postGroupIce: async (groupId, ice) => {
+    return await apiRequest(`/communication/group/${groupId}/webrtc/ice`, {
+      method: 'POST',
+      body: JSON.stringify(ice),
+    });
+  },
+  clearGroupSignaling: async (groupId) => {
+    return await apiRequest(`/communication/group/${groupId}/webrtc/clear`, {
+      method: 'POST',
+    });
   },
 };
 

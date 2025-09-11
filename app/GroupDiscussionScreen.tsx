@@ -1,12 +1,13 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useState, useEffect } from 'react';
-import { Alert, Dimensions, ScrollView, StyleSheet, TextInput, TouchableOpacity, View, ActivityIndicator } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Dimensions, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 
 import GameHeader from '../components/GameHeader';
 import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
+import { useFeatureAccess } from './hooks/useFeatureAccess';
 import { groupsAPI } from './services/api';
 
 const { width } = Dimensions.get('window');
@@ -26,6 +27,7 @@ interface GroupDiscussion {
   maxParticipants: number;
   status: GroupStatus;
   level: 'beginner' | 'intermediate' | 'advanced';
+  isPrivate: boolean;
   createdAt: Date;
 }
 
@@ -40,6 +42,9 @@ export default function GroupDiscussionScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  
+  // Feature access control
+  const { canAccess: canViewGroups, featureInfo: groupFeatureInfo } = useFeatureAccess('group_calls');
 
   // Fetch groups from backend
   const fetchGroups = async () => {
@@ -65,6 +70,7 @@ export default function GroupDiscussionScreen() {
         maxParticipants: group.maxParticipants,
         status: group.status as GroupStatus,
         level: group.level,
+        isPrivate: group.isPrivate || false,
         createdAt: new Date(group.createdAt)
       }));
 
@@ -114,44 +120,77 @@ export default function GroupDiscussionScreen() {
     try {
       setLoading(true);
       
-      // Join the group first
-      const joinResponse = await groupsAPI.joinGroup(group.id);
+      // Check if group is private and needs password
+      if (group.isPrivate) {
+        // Show password input dialog
+        Alert.prompt(
+          'Private Group',
+          'This group requires a password to join.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Join',
+              onPress: async (password) => {
+                if (!password) {
+                  Alert.alert('Error', 'Password is required for private groups');
+                  return;
+                }
+                await joinGroupWithPassword(group, password, mode);
+              }
+            }
+          ],
+          'secure-text'
+        );
+        return;
+      }
       
-      if (mode === 'chat') {
-        // @ts-ignore
+      await joinGroupWithPassword(group, null, mode);
+    } catch (error: any) {
+      console.error('Error joining group:', error);
+      Alert.alert('Error', error.message || 'Failed to join group');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const joinGroupWithPassword = async (group: GroupDiscussion, password: string | null, mode: 'chat' | 'voice' | 'video') => {
+    try {
+      // Join the group first
+      const joinResponse = await groupsAPI.joinGroup(group.id, password as any);
+    
+    if (mode === 'chat') {
+      // @ts-ignore
         navigation.navigate('GroupChatScreen', { 
           groupId: group.id,
-          groupInfo: {
-            title: group.title,
-            topic: group.topic,
+        groupInfo: {
+          title: group.title,
+          topic: group.topic,
             maxParticipants: group.maxParticipants,
             level: group.level,
-            isPrivate: false,
-            password: null
-          },
+            isPrivate: group.isPrivate,
+            password: password
+        },
           participants: joinResponse.data.participants
-        });
+      });
       } else {
         // For voice/video, navigate to waiting room first
-        // @ts-ignore
+      // @ts-ignore
         navigation.navigate('GroupWaitingRoom', {
-          groupInfo: {
-            title: group.title,
-            topic: group.topic,
+        groupInfo: {
+          title: group.title,
+          topic: group.topic,
             maxParticipants: group.maxParticipants,
             level: group.level,
-            isPrivate: false,
-            password: null
+            isPrivate: group.isPrivate,
+            password: password
           },
           groupId: group.id,
           sessionType: mode
         });
       }
     } catch (error: any) {
-      console.error('Error joining group:', error);
+      console.error('Error joining group with password:', error);
       Alert.alert('Error', error.message || 'Failed to join group');
-    } finally {
-      setLoading(false);
     }
   };
   
@@ -319,6 +358,13 @@ export default function GroupDiscussionScreen() {
                       <ThemedText style={styles.timeText}>{formatTime(group.createdAt)}</ThemedText>
                     </View>
                   </View>
+                  <View style={styles.statusContainer}>
+                    {group.isPrivate && (
+                      <View style={styles.privateBadge}>
+                        <FontAwesome name="lock" size={10} color="#dc2929" />
+                        <ThemedText style={styles.privateText}>Private</ThemedText>
+                      </View>
+                    )}
                   <View style={[styles.statusBadge, 
                     group.status === 'open' ? styles.openBadge : 
                     group.status === 'ongoing' ? styles.ongoingBadge : 
@@ -327,6 +373,7 @@ export default function GroupDiscussionScreen() {
                     <ThemedText style={styles.statusText}>
                       {group.status.charAt(0).toUpperCase() + group.status.slice(1)}
                     </ThemedText>
+                    </View>
                   </View>
                 </View>
                 
@@ -624,6 +671,24 @@ const styles = StyleSheet.create({
   timeText: {
     fontSize: 12,
     color: '#999999',
+  },
+  statusContainer: {
+    alignItems: 'flex-end',
+  },
+  privateBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(220, 41, 41, 0.1)',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginBottom: 4,
+  },
+  privateText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#dc2929',
+    marginLeft: 4,
   },
   statusBadge: {
     borderRadius: 4,

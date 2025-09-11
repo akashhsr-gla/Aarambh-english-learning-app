@@ -34,6 +34,7 @@ export default function HomeScreen() {
       
       // Get current user info
       const userResponse = await authAPI.getCurrentUser();
+      
       if (userResponse.success && userResponse.data.user) {
         const user = userResponse.data.user;
         
@@ -50,12 +51,22 @@ export default function HomeScreen() {
           }
         }
         
-        setUserData({
+        const userData = {
           name: user.name || 'User',
           playerCode: user._id ? `#${user._id.slice(-6).toUpperCase()}` : '#000000',
           points: rankInfo ? rankInfo.statistics?.totalScore || 0 : (user.studentInfo?.totalPoints || 0),
           region: user.region?.name || 'No Region',
           rank: rankInfo ? `#${rankInfo.rank}` : (user.role === 'student' ? 'Unranked' : 'N/A')
+        };
+        
+        setUserData(userData);
+      } else {
+        setUserData({
+          name: 'Not logged in',
+          playerCode: '#GUEST',
+          points: 0,
+          region: 'Unknown',
+          rank: 'N/A'
         });
       }
     } catch (error) {

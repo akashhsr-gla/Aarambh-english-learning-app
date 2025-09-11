@@ -2,10 +2,12 @@ import { FontAwesome } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, Keyboard, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, Dimensions, Image, Keyboard, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 
 import GameHeader from '../components/GameHeader';
 import { ThemedText } from '../components/ThemedText';
+import FeatureAccessWrapper from './components/FeatureAccessWrapper';
+import { useFeatureAccess } from './hooks/useFeatureAccess';
 import { gamesAPI } from './services/api';
 
 const { width } = Dimensions.get('window');
@@ -18,6 +20,8 @@ type IdentificationItem = {
   category: string;
   hint: string;
   difficulty: string;
+  imageUrl?: string;
+  mediaType?: string;
 };
 
 // Define backend game question interface
@@ -48,6 +52,9 @@ export default function IdentificationGame() {
   const [gameItems, setGameItems] = useState<IdentificationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Feature access control
+  const { canAccess: canPlayGames, featureInfo: gameFeatureInfo } = useFeatureAccess('games');
   
   // Animation values
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -67,7 +74,9 @@ export default function IdentificationGame() {
       icon: 'question' as React.ComponentProps<typeof FontAwesome>['name'],
       category: 'General',
       hint: question.questionText || question.hint || 'Look carefully at the image',
-      difficulty: question.difficulty ? question.difficulty.charAt(0).toUpperCase() + question.difficulty.slice(1) : 'Easy'
+      difficulty: question.difficulty ? question.difficulty.charAt(0).toUpperCase() + question.difficulty.slice(1) : 'Easy',
+      imageUrl: question.mediaUrl,
+      mediaType: question.mediaType
     };
   };
   
@@ -145,7 +154,7 @@ export default function IdentificationGame() {
         return prev - 1;
       });
     }, 1000);
-
+    
     return () => clearInterval(timer);
   }, [showResult, gameOver, currentItemIndex, gameItems.length, loading]);
 
@@ -167,7 +176,7 @@ export default function IdentificationGame() {
       setTimeLeft(20);
       setShowHint(false);
       setHintUsed(false);
-      inputRef.current?.focus();
+        inputRef.current?.focus();
     } else {
       setGameOver(true);
     }
@@ -273,15 +282,15 @@ export default function IdentificationGame() {
 
   // Loading state
   if (loading) {
-    return (
-      <View style={styles.container}>
-        <LinearGradient
-          colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.gradientBackground}
-        />
-        <GameHeader title="Identification Game" showBackButton onBackPress={() => navigation.goBack()} />
+  return (
+    <View style={styles.container}>
+      <LinearGradient
+        colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.gradientBackground}
+      />
+      <GameHeader title="Identification Game" showBackButton onBackPress={() => navigation.goBack()} />
         <View style={styles.loadingContainer}>
           <FontAwesome name="spinner" size={50} color="#dc2929" />
           <ThemedText style={styles.loadingText}>Loading identification games...</ThemedText>
@@ -306,8 +315,8 @@ export default function IdentificationGame() {
           <ThemedText style={styles.errorText}>{error}</ThemedText>
           <TouchableOpacity style={styles.retryButton} onPress={resetGame}>
             <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
-          </TouchableOpacity>
-        </View>
+              </TouchableOpacity>
+            </View>
       </View>
     );
   }
@@ -331,20 +340,20 @@ export default function IdentificationGame() {
           <ThemedText style={styles.finalScore}>Final Score: {score}</ThemedText>
           <ThemedText style={styles.gameOverMessage}>
             You completed {gameItems.length} identification challenges!
-          </ThemedText>
+                    </ThemedText>
           
           <View style={styles.gameOverButtons}>
             <TouchableOpacity style={styles.playAgainButton} onPress={resetGame}>
               <FontAwesome name="refresh" size={20} color="#FFFFFF" />
               <ThemedText style={styles.playAgainText}>Play Again</ThemedText>
-            </TouchableOpacity>
+                  </TouchableOpacity>
             
             <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
               <FontAwesome name="home" size={20} color="#666666" />
               <ThemedText style={styles.backText}>Back to Games</ThemedText>
-            </TouchableOpacity>
+                  </TouchableOpacity>
+              </View>
           </View>
-        </View>
       </View>
     );
   }
@@ -360,6 +369,12 @@ export default function IdentificationGame() {
       
       <GameHeader title="Identification Game" showBackButton onBackPress={() => navigation.goBack()} />
       
+      <FeatureAccessWrapper
+        featureKey="games"
+        fallback={null}
+        style={styles.container}
+        navigation={navigation}
+      >
       {/* Score and Progress */}
       <View style={styles.scoreContainer}>
         <View style={styles.scoreItem}>
@@ -384,7 +399,7 @@ export default function IdentificationGame() {
           <ThemedText style={styles.scoreText}>{currentItemIndex + 1}/{gameItems.length}</ThemedText>
         </View>
       </View>
-
+      
       {/* Progress Bar */}
       <View style={styles.progressContainer}>
         <View style={styles.progressBar}>
@@ -398,18 +413,18 @@ export default function IdentificationGame() {
       </View>
 
       {/* Game Content */}
-      <Animated.View 
-        style={[
-          styles.gameContent,
-          {
-            opacity: fadeAnim,
-            transform: [
+        <Animated.View 
+          style={[
+            styles.gameContent,
+            {
+              opacity: fadeAnim,
+              transform: [
               { scale: scaleAnim },
               { translateY: slideAnim }
-            ]
-          }
-        ]}
-      >
+              ]
+            }
+          ]}
+        >
         {/* Category and Difficulty */}
         <View style={styles.infoContainer}>
           <View style={styles.categoryBadge}>
@@ -418,13 +433,22 @@ export default function IdentificationGame() {
           <View style={[styles.difficultyBadge, { backgroundColor: getDifficultyColor(currentItem.difficulty) }]}>
             <ThemedText style={styles.difficultyText}>{currentItem.difficulty}</ThemedText>
           </View>
-        </View>
-
-        {/* Icon Display */}
-        <View style={styles.iconContainer}>
-          <FontAwesome name={currentItem.icon} size={120} color="#dc2929" />
-        </View>
-
+          </View>
+          
+        {/* Media/Icon Display */}
+          <View style={styles.iconContainer}>
+          {currentItem.imageUrl ? (
+            // eslint-disable-next-line react/no-unstable-nested-components
+            <Image
+              source={{ uri: currentItem.imageUrl }}
+              style={{ width: 180, height: 180, borderRadius: 12 }}
+              resizeMode="cover"
+            />
+          ) : (
+            <FontAwesome name={currentItem.icon} size={120} color="#dc2929" />
+          )}
+          </View>
+          
         {/* Question */}
         <ThemedText style={styles.questionText}>What is this?</ThemedText>
 
@@ -437,16 +461,16 @@ export default function IdentificationGame() {
         )}
 
         {/* Answer Input */}
-        <View style={styles.inputContainer}>
-          <TextInput
-            ref={inputRef}
+          <View style={styles.inputContainer}>
+            <TextInput
+              ref={inputRef}
             style={styles.answerInput}
-            value={answer}
-            onChangeText={setAnswer}
+              value={answer}
+              onChangeText={setAnswer}
             placeholder="Type your answer..."
             placeholderTextColor="#999999"
-            autoCapitalize="none"
-            autoCorrect={false}
+              autoCapitalize="none"
+              autoCorrect={false}
             autoFocus={true}
             onSubmitEditing={handleAnswer}
             editable={!showResult}
@@ -462,34 +486,34 @@ export default function IdentificationGame() {
             </TouchableOpacity>
           )}
           
-          <TouchableOpacity 
-            style={[styles.submitButton, showResult && styles.disabledButton]} 
+            <TouchableOpacity 
+              style={[styles.submitButton, showResult && styles.disabledButton]} 
             onPress={handleAnswer}
-            disabled={showResult}
-          >
-            <FontAwesome name="check" size={20} color="#FFFFFF" />
+              disabled={showResult}
+            >
+              <FontAwesome name="check" size={20} color="#FFFFFF" />
             <ThemedText style={styles.submitButtonText}>Submit</ThemedText>
-          </TouchableOpacity>
-        </View>
-
+            </TouchableOpacity>
+          </View>
+          
         {/* Result Display */}
-        {showResult && (
+          {showResult && (
           <Animated.View style={styles.resultContainer}>
-            <FontAwesome 
-              name={isCorrect ? "check-circle" : "times-circle"} 
+              <FontAwesome 
+                name={isCorrect ? "check-circle" : "times-circle"} 
               size={40} 
-              color={isCorrect ? "#4CAF50" : "#F44336"} 
-            />
+                color={isCorrect ? "#4CAF50" : "#F44336"} 
+              />
             <ThemedText style={[styles.resultText, { color: isCorrect ? "#4CAF50" : "#F44336" }]}>
               {isCorrect ? "Correct!" : "Incorrect!"}
-            </ThemedText>
+              </ThemedText>
             {!isCorrect && (
               <ThemedText style={styles.correctAnswerText}>
                 The correct answer was: {currentItem.name}
-              </ThemedText>
-            )}
-          </Animated.View>
-        )}
+                </ThemedText>
+          )}
+        </Animated.View>
+      )}
       </Animated.View>
 
       {/* Bottom Actions */}
@@ -499,6 +523,7 @@ export default function IdentificationGame() {
           <ThemedText style={styles.endGameText}>End Game</ThemedText>
         </TouchableOpacity>
       </View>
+      </FeatureAccessWrapper>
     </View>
   );
 }

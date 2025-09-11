@@ -8,6 +8,8 @@ import { ActivityIndicator, Alert, Animated, Dimensions, ScrollView, StyleSheet,
 import GameHeader from '../components/GameHeader';
 import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
+import FeatureAccessWrapper from './components/FeatureAccessWrapper';
+import { useFeatureAccess } from './hooks/useFeatureAccess';
 import { gamesAPI } from './services/api';
 
 const { width } = Dimensions.get('window');
@@ -43,6 +45,9 @@ export default function PronunciationGame() {
   const [pronunciationData, setPronunciationData] = useState<PronunciationWord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Feature access control
+  const { canAccess: canPlayGames, featureInfo: gameFeatureInfo } = useFeatureAccess('games');
   
   // Animation values
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -341,19 +346,19 @@ export default function PronunciationGame() {
   };
 
   if (loading) {
-    return (
-      <View style={styles.container}>
-        <LinearGradient
-          colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.gradientBackground}
-        />
-        <GameHeader title="Pronunciation Practice" showBackButton onBackPress={() => navigation.goBack()} />
+  return (
+    <View style={styles.container}>
+      <LinearGradient
+        colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.gradientBackground}
+      />
+      <GameHeader title="Pronunciation Practice" showBackButton onBackPress={() => navigation.goBack()} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#226cae" />
           <ThemedText style={styles.loadingText}>Loading pronunciation words...</ThemedText>
-        </View>
+            </View>
       </View>
     );
   }
@@ -373,8 +378,8 @@ export default function PronunciationGame() {
           <ThemedText style={styles.errorText}>{error}</ThemedText>
           <TouchableOpacity style={styles.retryButton} onPress={fetchPronunciationData}>
             <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
-          </TouchableOpacity>
-        </View>
+                  </TouchableOpacity>
+              </View>
       </View>
     );
   }
@@ -392,7 +397,7 @@ export default function PronunciationGame() {
         <View style={styles.errorContainer}>
           <FontAwesome name="question-circle" size={48} color="#666" />
           <ThemedText style={styles.errorText}>No pronunciation words available</ThemedText>
-        </View>
+              </View>
       </View>
     );
   }
@@ -408,155 +413,162 @@ export default function PronunciationGame() {
       
       <GameHeader title="Pronunciation Practice" showBackButton onBackPress={() => navigation.goBack()} />
       
-      <View style={styles.scoreContainer}>
-        <View style={styles.scoreItem}>
-          <FontAwesome name="star" size={18} color="#FFD700" />
-          <ThemedText style={styles.scoreText}>Score: {score}</ThemedText>
+      <FeatureAccessWrapper
+        featureKey="games"
+        fallback={null}
+        style={styles.container}
+        navigation={navigation}
+      >
+        <View style={styles.scoreContainer}>
+          <View style={styles.scoreItem}>
+            <FontAwesome name="star" size={18} color="#FFD700" />
+            <ThemedText style={styles.scoreText}>Score: {score}</ThemedText>
+          </View>
+          <View style={styles.scoreItem}>
+            <FontAwesome name="microphone" size={18} color="#226cae" />
+            <ThemedText style={styles.scoreText}>
+              {currentWordIndex + 1}/{pronunciationData.length}
+            </ThemedText>
+          </View>
         </View>
-        <View style={styles.scoreItem}>
-          <FontAwesome name="microphone" size={18} color="#226cae" />
-          <ThemedText style={styles.scoreText}>
-            {currentWordIndex + 1}/{pronunciationData.length}
-          </ThemedText>
-        </View>
-      </View>
-      
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollViewContent}>
-        <Animated.View 
-          style={[
-            styles.wordContainer,
-            { 
-              opacity: fadeAnim,
-              transform: [{ translateX: slideAnim }]
-            }
-          ]}
-        >
-          <ThemedView style={styles.wordCard}>
-            <View style={styles.wordHeader}>
-              <View style={[styles.difficultyBadge, { backgroundColor: getDifficultyColor(currentWord.difficulty) }]}>
-                <ThemedText style={styles.difficultyText}>{currentWord.difficulty}</ThemedText>
-              </View>
-            </View>
-            
-            <View style={styles.wordContent}>
-              <ThemedText style={styles.wordText}>{currentWord.word}</ThemedText>
-              <ThemedText style={styles.phoneticText}>{currentWord.phonetic}</ThemedText>
-            </View>
-            
-            <View style={styles.exampleContainer}>
-              <ThemedText style={styles.exampleLabel}>Example:</ThemedText>
-              <ThemedText style={styles.exampleText}>"{currentWord.example}"</ThemedText>
-            </View>
-            
-            <View style={styles.tipsContainer}>
-              <View style={styles.tipsHeader}>
-                <FontAwesome name="lightbulb-o" size={18} color="#FFC107" />
-                <ThemedText style={styles.tipsLabel}>Pronunciation Tip:</ThemedText>
-              </View>
-              <ThemedText style={styles.tipsText}>{currentWord.tips}</ThemedText>
-            </View>
-            
-            <View style={styles.recordingContainer}>
-              {recordingStatus === "ready" && (
-                <TouchableOpacity onPress={startRecording}>
-                  <Animated.View 
-                    style={[
-                      styles.recordButton,
-                      { transform: [{ scale: pulseAnim }] }
-                    ]}
-                  >
-                    <FontAwesome name="microphone" size={32} color="#FFFFFF" />
-                    <ThemedText style={styles.recordButtonText}>Tap to Speak</ThemedText>
-                  </Animated.View>
-                </TouchableOpacity>
-              )}
-              
-              {recordingStatus === "recording" && (
-                <View>
-                  <Animated.View 
-                    style={[
-                      styles.recordingIndicator,
-                      { transform: [{ scale: pulseAnim }] }
-                    ]}
-                  >
-                    <FontAwesome name="microphone" size={32} color="#FFFFFF" />
-                  </Animated.View>
-                  <ThemedText style={styles.recordingText}>Recording... Say "{currentWord.word}"</ThemedText>
-                </View>
-              )}
-              
-              {recordingStatus === "processing" && (
-                <View style={styles.processingContainer}>
-                  <ThemedText style={styles.processingText}>Processing your pronunciation...</ThemedText>
-                  <View style={styles.loadingDots}>
-                    <View style={styles.loadingDot} />
-                    <View style={[styles.loadingDot, { animationDelay: '0.2s' }]} />
-                    <View style={[styles.loadingDot, { animationDelay: '0.4s' }]} />
+        
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollViewContent}>
+            <Animated.View 
+              style={[
+                styles.wordContainer,
+                { 
+                  opacity: fadeAnim,
+                  transform: [{ translateX: slideAnim }]
+                }
+              ]}
+            >
+              <ThemedView style={styles.wordCard}>
+                <View style={styles.wordHeader}>
+                  <View style={[styles.difficultyBadge, { backgroundColor: getDifficultyColor(currentWord.difficulty) }]}>
+                    <ThemedText style={styles.difficultyText}>{currentWord.difficulty}</ThemedText>
                   </View>
                 </View>
-              )}
-              
-              {recordingStatus === "feedback" && feedback && (
-                <View style={styles.feedbackContainer}>
-                  <View style={styles.feedbackHeader}>
-                    <ThemedText style={[styles.feedbackMessage, { color: feedback.color }]}>
-                      {feedback.message}
-                    </ThemedText>
-                    <View style={styles.accuracyContainer}>
-                      <ThemedText style={styles.accuracyLabel}>Accuracy</ThemedText>
-                      <View style={styles.accuracyBar}>
-                        <View 
-                          style={[
-                            styles.accuracyFill, 
-                            { 
-                              width: `${feedback.accuracy}%`,
-                              backgroundColor: feedback.color
-                            }
-                          ]} 
-                        />
-                      </View>
-                      <ThemedText style={styles.accuracyText}>{feedback.accuracy}%</ThemedText>
+                
+                <View style={styles.wordContent}>
+                  <ThemedText style={styles.wordText}>{currentWord.word}</ThemedText>
+                  <ThemedText style={styles.phoneticText}>{currentWord.phonetic}</ThemedText>
+                </View>
+                
+                <View style={styles.exampleContainer}>
+                  <ThemedText style={styles.exampleLabel}>Example:</ThemedText>
+                  <ThemedText style={styles.exampleText}>"{currentWord.example}"</ThemedText>
+                </View>
+                
+                <View style={styles.tipsContainer}>
+                  <View style={styles.tipsHeader}>
+                    <FontAwesome name="lightbulb-o" size={18} color="#FFC107" />
+                    <ThemedText style={styles.tipsLabel}>Pronunciation Tip:</ThemedText>
+                  </View>
+                  <ThemedText style={styles.tipsText}>{currentWord.tips}</ThemedText>
+                </View>
+                
+                <View style={styles.recordingContainer}>
+                  {recordingStatus === "ready" && (
+                    <TouchableOpacity onPress={startRecording}>
+                      <Animated.View 
+                        style={[
+                          styles.recordButton,
+                          { transform: [{ scale: pulseAnim }] }
+                        ]}
+                      >
+                        <FontAwesome name="microphone" size={32} color="#FFFFFF" />
+                        <ThemedText style={styles.recordButtonText}>Tap to Speak</ThemedText>
+                      </Animated.View>
+                    </TouchableOpacity>
+                  )}
+                  
+                  {recordingStatus === "recording" && (
+                    <View>
+                      <Animated.View 
+                        style={[
+                          styles.recordingIndicator,
+                          { transform: [{ scale: pulseAnim }] }
+                        ]}
+                      >
+                        <FontAwesome name="microphone" size={32} color="#FFFFFF" />
+                      </Animated.View>
+                      <ThemedText style={styles.recordingText}>Recording... Say "{currentWord.word}"</ThemedText>
                     </View>
-                  </View>
+                  )}
                   
-                  <ThemedText style={styles.feedbackDetails}>{feedback.details}</ThemedText>
+                  {recordingStatus === "processing" && (
+                    <View style={styles.processingContainer}>
+                      <ThemedText style={styles.processingText}>Processing your pronunciation...</ThemedText>
+                      <View style={styles.loadingDots}>
+                        <View style={styles.loadingDot} />
+                        <View style={[styles.loadingDot, { animationDelay: '0.2s' }]} />
+                        <View style={[styles.loadingDot, { animationDelay: '0.4s' }]} />
+                      </View>
+                    </View>
+                  )}
                   
-                  <View style={styles.playbackContainer}>
-                    <TouchableOpacity 
-                      style={styles.playButton}
-                      onPress={playRecording}
-                      disabled={isPlaying}
-                    >
-                      <FontAwesome name={isPlaying ? "pause" : "play"} size={18} color="#FFFFFF" />
-                      <ThemedText style={styles.playButtonText}>
-                        {isPlaying ? "Playing..." : "Play Your Recording"}
-                      </ThemedText>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                      style={styles.tryAgainButton}
-                      onPress={() => setRecordingStatus("ready")}
-                    >
-                      <FontAwesome name="refresh" size={18} color="#226cae" />
-                      <ThemedText style={styles.tryAgainText}>Try Again</ThemedText>
-                    </TouchableOpacity>
-                  </View>
-                  
-                  <TouchableOpacity 
-                    style={styles.nextButton}
-                    onPress={moveToNextWord}
-                  >
-                    <ThemedText style={styles.nextButtonText}>
-                      {currentWordIndex < pronunciationData.length - 1 ? "Next Word" : "Finish Practice"}
-                    </ThemedText>
-                    <FontAwesome name="arrow-right" size={16} color="#FFFFFF" />
-                  </TouchableOpacity>
+                  {recordingStatus === "feedback" && feedback && (
+                    <View style={styles.feedbackContainer}>
+                      <View style={styles.feedbackHeader}>
+                        <ThemedText style={[styles.feedbackMessage, { color: feedback.color }]}>
+                          {feedback.message}
+                        </ThemedText>
+                        <View style={styles.accuracyContainer}>
+                          <ThemedText style={styles.accuracyLabel}>Accuracy</ThemedText>
+                          <View style={styles.accuracyBar}>
+                            <View 
+                              style={[
+                                styles.accuracyFill, 
+                                { 
+                                  width: `${feedback.accuracy}%`,
+                                  backgroundColor: feedback.color
+                                }
+                              ]} 
+                            />
+                          </View>
+                          <ThemedText style={styles.accuracyText}>{feedback.accuracy}%</ThemedText>
+                        </View>
+                      </View>
+                      
+                      <ThemedText style={styles.feedbackDetails}>{feedback.details}</ThemedText>
+                      
+                      <View style={styles.playbackContainer}>
+                        <TouchableOpacity 
+                          style={styles.playButton}
+                          onPress={playRecording}
+                          disabled={isPlaying}
+                        >
+                          <FontAwesome name={isPlaying ? "pause" : "play"} size={18} color="#FFFFFF" />
+                          <ThemedText style={styles.playButtonText}>
+                            {isPlaying ? "Playing..." : "Play Your Recording"}
+                          </ThemedText>
+                        </TouchableOpacity>
+                        
+                        <TouchableOpacity 
+                          style={styles.tryAgainButton}
+                          onPress={() => setRecordingStatus("ready")}
+                        >
+                          <FontAwesome name="refresh" size={18} color="#226cae" />
+                          <ThemedText style={styles.tryAgainText}>Try Again</ThemedText>
+                        </TouchableOpacity>
+                      </View>
+                      
+                      <TouchableOpacity 
+                        style={styles.nextButton}
+                        onPress={moveToNextWord}
+                      >
+                        <ThemedText style={styles.nextButtonText}>
+                          {currentWordIndex < pronunciationData.length - 1 ? "Next Word" : "Finish Practice"}
+                        </ThemedText>
+                        <FontAwesome name="arrow-right" size={16} color="#FFFFFF" />
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
-              )}
-            </View>
-          </ThemedView>
-        </Animated.View>
-      </ScrollView>
+              </ThemedView>
+            </Animated.View>
+        </ScrollView>
+      </FeatureAccessWrapper>
     </View>
   );
 }

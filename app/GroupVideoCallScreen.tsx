@@ -3,16 +3,18 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    Dimensions,
-    Platform,
-    StatusBar,
-    StyleSheet,
-    TouchableOpacity,
-    View
+  Alert,
+  Dimensions,
+  Platform,
+  StatusBar,
+  StyleSheet,
+  TouchableOpacity,
+  View
 } from 'react-native';
 
 import { ThemedText } from '../components/ThemedText';
+import FeatureAccessWrapper from './components/FeatureAccessWrapper';
+import { useFeatureAccess } from './hooks/useFeatureAccess';
 
 const { width, height } = Dimensions.get('window');
 
@@ -35,12 +37,26 @@ interface RouteParams {
   participants: Participant[];
   groupId?: string;
   isVoiceOnly?: boolean;
+  initialAudioState?: {
+    isMuted: boolean;
+    isSpeakerOn: boolean;
+  };
+  initialVideoState?: {
+    hasVideo: boolean;
+  };
 }
 
 export default function GroupVideoCallScreen() {
   const navigation = useNavigation();
   const route = useRoute();
-  const { groupInfo, participants: routeParticipants, groupId, isVoiceOnly = false } = (route.params as RouteParams) || {};
+  const { 
+    groupInfo, 
+    participants: routeParticipants, 
+    groupId, 
+    isVoiceOnly = false,
+    initialAudioState,
+    initialVideoState
+  } = (route.params as RouteParams) || {};
   
   const [participants] = useState<Participant[]>(routeParticipants || [
     { id: '1', name: 'You', isHost: true, isMuted: false, hasVideo: !isVoiceOnly },
@@ -50,10 +66,13 @@ export default function GroupVideoCallScreen() {
   ]);
   
   const [callDuration, setCallDuration] = useState(0);
-  const [isMuted, setIsMuted] = useState(false);
-  const [hasVideo, setHasVideo] = useState(!isVoiceOnly);
-  const [isSpeakerOn, setIsSpeakerOn] = useState(true);
+  const [isMuted, setIsMuted] = useState(initialAudioState?.isMuted || false);
+  const [hasVideo, setHasVideo] = useState(initialVideoState?.hasVideo ?? !isVoiceOnly);
+  const [isSpeakerOn, setIsSpeakerOn] = useState(initialAudioState?.isSpeakerOn ?? true);
   const [showParticipants, setShowParticipants] = useState(false);
+
+  // Feature access control
+  const { canAccess: canAccessGroupCalls, featureInfo: groupFeatureInfo } = useFeatureAccess('group_calls');
   
   // Timer for call duration
   useEffect(() => {
@@ -162,6 +181,12 @@ export default function GroupVideoCallScreen() {
         style={styles.background}
       />
       
+      <FeatureAccessWrapper
+        featureKey="group_calls"
+        fallback={null}
+        style={styles.container}
+        navigation={navigation}
+      >
       {/* Header Info */}
       <View style={styles.headerInfo}>
         <View style={styles.callInfo}>
@@ -314,6 +339,7 @@ export default function GroupVideoCallScreen() {
           </TouchableOpacity>
         </View>
       </View>
+      </FeatureAccessWrapper>
     </View>
   );
 }

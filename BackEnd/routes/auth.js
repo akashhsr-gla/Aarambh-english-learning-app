@@ -179,6 +179,64 @@ router.post('/login', [
   }
 });
 
+// @route   POST /api/auth/admin/login
+// @desc    Admin login (role must be admin)
+// @access  Public
+router.post('/admin/login', [
+  body('email').isEmail().normalizeEmail().withMessage('Please provide a valid email'),
+  body('password').exists().withMessage('Password is required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation errors',
+        errors: errors.array()
+      });
+    }
+
+    const { email, password } = req.body;
+
+    const user = await User.findOne({ email }).select('+password');
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+
+    if (user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Admin access required' });
+    }
+
+    if (!user.isActive) {
+      return res.status(401).json({ success: false, message: 'Account is deactivated' });
+    }
+
+    const isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+
+    user.lastActive = new Date();
+    await user.save();
+
+    const token = generateToken(user._id);
+    const userResponse = user.toObject();
+    delete userResponse.password;
+
+    res.json({
+      success: true,
+      message: 'Admin login successful',
+      data: {
+        user: userResponse,
+        token
+      }
+    });
+  } catch (error) {
+    console.error('Admin login error:', error);
+    res.status(500).json({ success: false, message: 'Server error during login' });
+  }
+});
+
 // @route   POST /api/auth/logout
 // @desc    Logout user
 // @access  Private

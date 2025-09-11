@@ -7,6 +7,8 @@ import { ActivityIndicator, Alert, ScrollView, StyleSheet, TouchableOpacity, Vie
 import GameHeader from '../components/GameHeader';
 import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
+import FeatureAccessWrapper from './components/FeatureAccessWrapper';
+import { useFeatureAccess } from './hooks/useFeatureAccess';
 import { groupsAPI } from './services/api';
 
 // Define the types for route params
@@ -43,6 +45,12 @@ export default function GroupWaitingRoom() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [groupDetails, setGroupDetails] = useState<any | null>(null);
+
+  // Feature access control
+  const { canAccess: canAccessGroupCalls, featureInfo: groupFeatureInfo } = useFeatureAccess('group_calls');
+  const [isMuted, setIsMuted] = useState(false);
+  const [hasVideo, setHasVideo] = useState(true);
+  const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   
   // Load group details and participants from backend
   const loadGroupDetails = async () => {
@@ -123,20 +131,35 @@ export default function GroupWaitingRoom() {
           groupInfo, 
           participants: readyParticipants,
           groupId,
-          isVoiceOnly: true
+          isVoiceOnly: true,
+          initialAudioState: { isMuted, isSpeakerOn }
         });
       } else if (mode === 'video') {
         // @ts-ignore
         navigation.navigate('GroupVideoCallScreen', { 
           groupInfo, 
           participants: readyParticipants,
-          groupId
+          groupId,
+          initialAudioState: { isMuted, isSpeakerOn },
+          initialVideoState: { hasVideo }
         });
       }
     } catch (error: any) {
       console.error('Error starting session:', error);
       Alert.alert('Error', error.message || 'Failed to start session');
     }
+  };
+
+  const toggleMute = () => {
+    setIsMuted(!isMuted);
+  };
+
+  const toggleVideo = () => {
+    setHasVideo(!hasVideo);
+  };
+
+  const toggleSpeaker = () => {
+    setIsSpeakerOn(!isSpeakerOn);
   };
   
   const handleLeaveGroup = () => {
@@ -225,6 +248,12 @@ export default function GroupWaitingRoom() {
       
       <GameHeader title="Waiting Room" showBackButton onBackPress={handleLeaveGroup} />
       
+      <FeatureAccessWrapper
+        featureKey="group_calls"
+        fallback={null}
+        style={styles.container}
+        navigation={navigation}
+      >
       <ScrollView style={styles.contentContainer} contentContainerStyle={styles.scrollContent}>
         <ThemedView style={styles.groupInfoCard}>
           <ThemedText style={styles.groupTitle}>{groupInfo.title}</ThemedText>
@@ -328,6 +357,54 @@ export default function GroupWaitingRoom() {
           </View>
         </ThemedView>
         
+        <ThemedView style={styles.mediaControlsCard}>
+          <ThemedText style={styles.mediaControlsTitle}>Media Settings</ThemedText>
+          <View style={styles.mediaControls}>
+            <TouchableOpacity 
+              style={[styles.mediaControlButton, isMuted && styles.activeMediaControl]}
+              onPress={toggleMute}
+            >
+              <FontAwesome 
+                name={isMuted ? "microphone-slash" : "microphone"} 
+                size={20} 
+                color={isMuted ? "#FFFFFF" : "#dc2929"} 
+              />
+              <ThemedText style={[styles.mediaControlText, isMuted && styles.activeMediaControlText]}>
+                {isMuted ? "Unmute" : "Mute"}
+              </ThemedText>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.mediaControlButton, !hasVideo && styles.activeMediaControl]}
+              onPress={toggleVideo}
+            >
+              <FontAwesome 
+                name={hasVideo ? "video-camera" : "video-camera"} 
+                size={20} 
+                color={hasVideo ? "#226cae" : "#FFFFFF"} 
+              />
+              {!hasVideo && <FontAwesome name="times" size={12} color="#dc2929" style={styles.disabledOverlay} />}
+              <ThemedText style={[styles.mediaControlText, !hasVideo && styles.activeMediaControlText]}>
+                {hasVideo ? "Video On" : "Video Off"}
+              </ThemedText>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.mediaControlButton, isSpeakerOn && styles.activeMediaControl]}
+              onPress={toggleSpeaker}
+            >
+              <FontAwesome 
+                name={isSpeakerOn ? "volume-up" : "volume-down"} 
+                size={20} 
+                color={isSpeakerOn ? "#4CAF50" : "#666666"} 
+              />
+              <ThemedText style={[styles.mediaControlText, isSpeakerOn && styles.activeMediaControlText]}>
+                {isSpeakerOn ? "Speaker" : "Earpiece"}
+              </ThemedText>
+            </TouchableOpacity>
+          </View>
+        </ThemedView>
+
         <View style={styles.infoCard}>
           <FontAwesome name="info-circle" size={20} color="#dc2929" style={styles.infoIcon} />
           <ThemedText style={styles.infoText}>
@@ -377,6 +454,7 @@ export default function GroupWaitingRoom() {
           </TouchableOpacity>
         )}
       </View>
+      </FeatureAccessWrapper>
     </View>
   );
 }
@@ -795,5 +873,61 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '600',
+  },
+  mediaControlsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#dc2929',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 3,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#dc2929',
+    borderWidth: 1,
+    borderColor: 'rgba(220, 41, 41, 0.1)',
+  },
+  mediaControlsTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#dc2929',
+    marginBottom: 12,
+  },
+  mediaControls: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  mediaControlButton: {
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#F5F5F5',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    minWidth: 80,
+  },
+  activeMediaControl: {
+    backgroundColor: '#dc2929',
+    borderColor: '#dc2929',
+  },
+  mediaControlText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666666',
+    marginTop: 4,
+  },
+  activeMediaControlText: {
+    color: '#FFFFFF',
+  },
+  disabledOverlay: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 6,
+    padding: 2,
   },
 }); 

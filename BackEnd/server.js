@@ -28,32 +28,55 @@ app.use(helmet({
 
 // CORS configuration for web and mobile support
 app.use(cors({
-  origin: [
-    'http://localhost:8081', // Expo web dev server
-    'http://localhost:19006', // Expo web alternative port
-    'http://localhost:3000',  // Next.js web
-    'http://127.0.0.1:8081',
-    'http://127.0.0.1:19006',
-    'http://10.0.2.2:8081',   // Android emulator
-    'exp://localhost:19000',  // Expo development
-    'exp://127.0.0.1:19000',
-    process.env.FRONTEND_URL
-  ].filter(Boolean),
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    const allowedOrigins = [
+      'http://localhost:8081',
+      'http://localhost:8082', // Expo web dev server
+      'http://localhost:19006', // Expo web alternative port
+      'http://localhost:3000',  // Next.js web
+      'http://localhost:3001',  // Next.js alternative port
+      'http://127.0.0.1:8081',
+      'http://127.0.0.1:8082',
+      'http://127.0.0.1:19006',
+      'http://127.0.0.1:3000',
+      'http://127.0.0.1:3001',
+      'http://10.0.2.2:8081',   // Android emulator
+      'exp://localhost:19000',  // Expo development
+      'exp://127.0.0.1:19000',
+      process.env.FRONTEND_URL
+    ].filter(Boolean);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      console.log('CORS: Blocked origin:', origin);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With']
 }));
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.',
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-
-app.use('/api/', limiter);
+// Rate limiting (disable in development for local testing & polling-heavy features)
+if (process.env.NODE_ENV === 'production') {
+  const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 1000, // allow more in production but still protective
+    message: 'Too many requests from this IP, please try again later.',
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req, res) => {
+      // Do not rate-limit signaling/polling endpoints to avoid breaking WebRTC
+      const p = req.path || '';
+      return p.includes('/communication/session/') || p.includes('/communication/sessions/active');
+    }
+  });
+  app.use('/api/', limiter);
+}
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
@@ -79,6 +102,17 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Simple test endpoint for debugging
+app.get('/test-connection', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Connection test successful',
+    origin: req.get('Origin') || 'No origin header',
+    userAgent: req.get('User-Agent'),
+    timestamp: new Date().toISOString()
+  });
+});
+
 // API Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
@@ -93,6 +127,7 @@ app.use('/api/referrals', require('./routes/referrals'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/communication', require('./routes/communication'));
 app.use('/api/groups', require('./routes/groups'));
+app.use('/api/features', require('./routes/features'));
 
 // Test endpoint to list all available routes
 app.get('/test', (req, res) => {

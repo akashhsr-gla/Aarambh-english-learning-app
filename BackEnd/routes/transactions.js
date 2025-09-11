@@ -193,15 +193,16 @@ router.post('/verify-payment', authenticateToken, [
       transactionId 
     } = req.body;
 
-    // Verify payment signature (placeholder - implement actual verification)
-    // const generatedSignature = crypto
-    //   .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
-    //   .update(razorpayOrderId + '|' + razorpayPaymentId)
-    //   .digest('hex');
+    // Verify payment signature
+    const crypto = require('crypto');
+    const generatedSignature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+      .update(razorpayOrderId + '|' + razorpayPaymentId)
+      .digest('hex');
 
-    // if (generatedSignature !== razorpaySignature) {
-    //   return res.status(400).json({ success: false, message: 'Invalid payment signature' });
-    // }
+    if (generatedSignature !== razorpaySignature) {
+      return res.status(400).json({ success: false, message: 'Invalid payment signature' });
+    }
 
     // Find and update transaction
     const transaction = await Transaction.findById(transactionId);
