@@ -49,7 +49,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     // Validate token with backend; if invalid, force login
     const validate = async () => {
       try {
-        const apiBase = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000';
+        const apiBase = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://aarambh-english-learning-app.onrender.com';
         const resp = await fetch(`${apiBase}/api/auth/me`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });

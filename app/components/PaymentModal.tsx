@@ -48,7 +48,7 @@ export default function PaymentModal({
     setLoading(true);
     try {
       // Create Razorpay order
-      const orderResponse = await fetch('http://localhost:5000/api/transactions/create-order', {
+      const orderResponse = await fetch('https://aarambh-english-learning-app.onrender.com/api/transactions/create-order', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -84,7 +84,7 @@ export default function PaymentModal({
         handler: async (response: any) => {
           try {
             // Verify payment
-            const verifyResponse = await fetch('http://localhost:5000/api/transactions/verify-payment', {
+            const verifyResponse = await fetch('https://aarambh-english-learning-app.onrender.com/api/transactions/verify-payment', {
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',

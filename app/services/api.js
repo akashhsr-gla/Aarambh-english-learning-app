@@ -10,16 +10,7 @@ try {
 }
 
 let API_BASE_URL;
-if (Platform.OS === 'android') {
-  // Android emulator uses 10.0.2.2 to access host machine's localhost
-  API_BASE_URL = 'http://10.0.2.2:5000/api';
-} else if (Platform.OS === 'web') {
-  // Web platform uses localhost
-  API_BASE_URL = 'http://localhost:5000/api';
-} else {
-  // iOS simulator and other platforms use localhost
-  API_BASE_URL = 'http://localhost:5000/api';
-}
+API_BASE_URL = 'https://aarambh-english-learning-app.onrender.com/api';
 
 // Helper function to make API requests
 const apiRequest = async (endpoint, options = {}) => {

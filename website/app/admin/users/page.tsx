@@ -40,7 +40,7 @@ export default function UserManagement() {
   const [page, setPage] = useState(1);
   const [limit] = useState(20);
   const [total, setTotal] = useState(0);
-  const backendUrl = useMemo(() => (process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'), []);
+  const backendUrl = useMemo(() => (process.env.NEXT_PUBLIC_BACKEND_URL || 'https://aarambh-english-learning-app.onrender.com'), []);
   const [regions, setRegions] = useState<{ _id: string; name: string }[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [createForm, setCreateForm] = useState({ name: '', email: '', phone: '', password: '', role: 'student', region: '' });

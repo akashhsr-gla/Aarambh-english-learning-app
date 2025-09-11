@@ -51,7 +51,7 @@ export default function GamesManagement() {
   const [selectedGameId, setSelectedGameId] = useState<string | null>(null);
   const [editError, setEditError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const backendUrl = useMemo(() => (process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:5000'), []);
+  const backendUrl = useMemo(() => (process.env.NEXT_PUBLIC_BACKEND_URL || 'https://aarambh-english-learning-app.onrender.com'), []);
 
   type QuestionType = 'multiple_choice' | 'true_false' | 'fill_blank' | 'audio' | 'image' | 'video';
   interface EditOption { text: string; explanation?: string; isCorrect?: boolean }
