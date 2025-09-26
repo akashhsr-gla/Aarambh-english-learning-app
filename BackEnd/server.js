@@ -128,6 +128,8 @@ app.use('/api/admin', require('./routes/admin'));
 app.use('/api/communication', require('./routes/communication'));
 app.use('/api/groups', require('./routes/groups'));
 app.use('/api/features', require('./routes/features'));
+app.use('/api/chat', require('./routes/chat'));
+app.use('/api/evaluation', require('./routes/evaluation'));
 
 // Test endpoint to list all available routes
 app.get('/test', (req, res) => {
@@ -265,6 +267,17 @@ app.get('/test', (req, res) => {
         'POST /api/groups/:groupId/start',
         'POST /api/groups/:groupId/leave',
         'GET /api/groups/my/active'
+      ],
+      chat: [
+        'POST /api/chat/conversations',
+        'GET /api/chat/conversations',
+        'GET /api/chat/conversations/:conversationId',
+        'POST /api/chat/conversations/:conversationId/messages',
+        'PUT /api/chat/conversations/:conversationId',
+        'DELETE /api/chat/conversations/:conversationId',
+        'GET /api/chat/stats',
+        'GET /api/chat/suggestions',
+        'GET /api/chat/health'
       ]
     }
   });

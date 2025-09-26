@@ -23,34 +23,68 @@ const generateToken = (userId) => {
 router.post('/register', [
   body('name').trim().isLength({ min: 2 }).withMessage('Name must be at least 2 characters'),
   body('email').isEmail().normalizeEmail().withMessage('Please provide a valid email'),
-  body('phone').isMobilePhone().withMessage('Please provide a valid phone number'),
+  body('phone').matches(/^[\+]?[0-9\-\(\)\s]+$/).isLength({ min: 10, max: 15 }).withMessage('Please provide a valid phone number (10-15 digits)'),
   body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
   body('role').isIn(['student', 'teacher']).withMessage('Role must be student or teacher'),
-  body('region').isMongoId().withMessage('Please provide a valid region ID')
+  body('region').custom((value) => {
+    if (!value) {
+      throw new Error('Please select a region');
+    }
+    // Allow both ObjectId and region name for flexibility
+    if (typeof value === 'string' && value.length >= 2) {
+      return true;
+    }
+    throw new Error('Please provide a valid region');
+  })
 ], async (req, res) => {
   try {
     // Check for validation errors
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      const errorMessages = errors.array().map(err => err.msg);
       return res.status(400).json({
         success: false,
-        message: 'Validation errors',
+        message: errorMessages.join(', '),
         errors: errors.array()
       });
     }
 
     const { name, email, phone, password, role, region, referralCode } = req.body;
 
+    // Normalize phone number
+    const normalizedPhone = phone.replace(/[\-\(\)\s]/g, '');
+
     // Check if user already exists
     const existingUser = await User.findOne({
-      $or: [{ email }, { phone }]
+      $or: [{ email }, { phone: normalizedPhone }]
     });
 
     if (existingUser) {
+      let conflictField = 'email and phone';
+      if (existingUser.email === email) conflictField = 'email';
+      else if (existingUser.phone === normalizedPhone) conflictField = 'phone number';
+      
       return res.status(400).json({
         success: false,
-        message: 'User with this email or phone already exists'
+        message: `User with this ${conflictField} already exists`
       });
+    }
+
+    // Handle region - try to find by ID first, then by name
+    let regionId = region;
+    if (!region.match(/^[0-9a-fA-F]{24}$/)) {
+      // Not a valid ObjectId, try to find by name
+      const regionDoc = await Region.findOne({ 
+        name: { $regex: new RegExp(`^${region}$`, 'i') } 
+      });
+      if (regionDoc) {
+        regionId = regionDoc._id;
+      } else {
+        // Create default region if none found
+        const defaultRegion = await Region.findOne({ code: 'DEF' }) || 
+          await new Region({ name: 'Default', code: 'DEF', isActive: true }).save();
+        regionId = defaultRegion._id;
+      }
     }
 
     // Validate referral code if provided
@@ -71,10 +105,10 @@ router.post('/register', [
     const user = new User({
       name,
       email,
-      phone,
+      phone: normalizedPhone,
       password,
       role,
-      region,
+      region: regionId,
       referredBy
     });
 
@@ -97,9 +131,28 @@ router.post('/register', [
     });
   } catch (error) {
     console.error('Registration error:', error);
+    
+    // Handle MongoDB duplicate key errors
+    if (error.code === 11000) {
+      const field = Object.keys(error.keyPattern)[0];
+      return res.status(400).json({
+        success: false,
+        message: `User with this ${field} already exists`
+      });
+    }
+
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const errorMessages = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: errorMessages.join(', ')
+      });
+    }
+
     res.status(500).json({
       success: false,
-      message: 'Server error during registration'
+      message: 'Server error during registration. Please try again later.'
     });
   }
 });

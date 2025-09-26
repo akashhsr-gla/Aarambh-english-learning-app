@@ -9,7 +9,7 @@ import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
 import FeatureAccessWrapper from './components/FeatureAccessWrapper';
 import { useFeatureAccess } from './hooks/useFeatureAccess';
-import { gamesAPI } from './services/api';
+import { evaluation, gamesAPI } from './services/api';
 
 const { width, height } = Dimensions.get('window');
 
@@ -37,6 +37,8 @@ export default function StoryTellingGame() {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [score, setScore] = useState(0);
   const [feedback, setFeedback] = useState("");
+  const [aiEvaluation, setAiEvaluation] = useState<any>(null);
+  const [evaluationLoading, setEvaluationLoading] = useState(false);
   const [gameOver, setGameOver] = useState(false);
   const [keywordsUsed, setKeywordsUsed] = useState<string[]>([]);
   const [wordCount, setWordCount] = useState(0);
@@ -193,19 +195,58 @@ export default function StoryTellingGame() {
     evaluateStory();
   };
   
-  const evaluateStory = () => {
+  const evaluateStory = async () => {
     if (!currentStory) return;
     
-    // Calculate score based on:
-    // 1. Word count compared to minimum required
-    // 2. Number of keywords used
-    // 3. Time remaining (bonus)
+    setEvaluationLoading(true);
+    
+    try {
+      console.log('🤖 Evaluating story with AI...');
+      
+      const evaluationData = {
+        story: storyText,
+        prompt: currentStory.beginning,
+        keywords: currentStory.keywords,
+        minWords: currentStory.minWords,
+        difficulty: currentStory.difficulty.toLowerCase(),
+        timeSpent: currentStory.timeLimit - timeLeft,
+        maxTime: currentStory.timeLimit
+      };
+      
+      const response = await evaluation.evaluateStory(evaluationData);
+      
+      if (response.success) {
+        const aiEval = response.data.evaluation;
+        setAiEvaluation(aiEval);
+        
+        // Use AI evaluation for score and feedback
+        setScore(score + aiEval.final_score);
+        setFeedback(aiEval.feedback);
+        
+        console.log('✅ AI story evaluation completed:', aiEval);
+      } else {
+        throw new Error('AI evaluation failed');
+      }
+    } catch (error) {
+      console.error('❌ AI evaluation error:', error);
+      
+      // Fallback to simple evaluation
+      const fallbackEvaluation = getFallbackEvaluation();
+      setScore(score + fallbackEvaluation.score);
+      setFeedback(fallbackEvaluation.feedback);
+    } finally {
+      setEvaluationLoading(false);
+    }
+  };
+  
+  const getFallbackEvaluation = () => {
+    if (!currentStory) return { score: 0, feedback: "No story to evaluate." };
     
     let storyScore = 0;
     let feedbackText = "";
     
     // Word count score (up to 50 points)
-    const wordCountRatio = Math.min(wordCount / currentStory.minWords, 2); // Cap at 2x minimum
+    const wordCountRatio = Math.min(wordCount / currentStory.minWords, 2);
     const wordCountScore = Math.min(Math.floor(wordCountRatio * 25), 50);
     
     // Keywords score (10 points each, up to 50 points)
@@ -237,8 +278,7 @@ export default function StoryTellingGame() {
       feedbackText += "You ran out of time. Try to manage your time better. ";
     }
     
-    setScore(score + storyScore);
-    setFeedback(feedbackText);
+    return { score: storyScore, feedback: feedbackText };
   };
   
   const moveToNextStory = () => {
@@ -545,38 +585,95 @@ export default function StoryTellingGame() {
                 <ThemedText style={styles.submitButtonText}>Submit Story</ThemedText>
                 <FontAwesome name="check" size={16} color="#FFFFFF" />
               </TouchableOpacity>
+            ) : evaluationLoading ? (
+              <View style={styles.feedbackContainer}>
+                <View style={styles.evaluationLoadingContainer}>
+                  <ActivityIndicator size="large" color="#226cae" />
+                  <ThemedText style={styles.evaluationLoadingText}>🤖 AI is evaluating your story...</ThemedText>
+                  <ThemedText style={styles.evaluationLoadingSubtext}>This may take a few seconds</ThemedText>
+                </View>
+              </View>
             ) : (
               <View style={styles.feedbackContainer}>
                 <View style={styles.scoreBreakdown}>
-                  <ThemedText style={styles.feedbackTitle}>Your Score</ThemedText>
+                  <ThemedText style={styles.feedbackTitle}>
+                    Your Score {aiEvaluation?.grade && `(Grade: ${aiEvaluation.grade})`}
+                  </ThemedText>
                   
-                  <View style={styles.scoreRow}>
-                    <ThemedText style={styles.scoreLabel}>Word Count:</ThemedText>
-                    <ThemedText style={styles.scoreValue}>
-                      {wordCount >= currentStory.minWords ? 
-                        `${Math.min(Math.floor((wordCount / currentStory.minWords) * 25), 50)}/50` : 
-                        `${Math.floor((wordCount / currentStory.minWords) * 25)}/50`}
-                    </ThemedText>
-                  </View>
+                  {aiEvaluation?.score_breakdown ? (
+                    <>
+                      <View style={styles.scoreRow}>
+                        <ThemedText style={styles.scoreLabel}>Creativity:</ThemedText>
+                        <ThemedText style={styles.scoreValue}>{aiEvaluation.score_breakdown.creativity}/25</ThemedText>
+                      </View>
+                      
+                      <View style={styles.scoreRow}>
+                        <ThemedText style={styles.scoreLabel}>Grammar:</ThemedText>
+                        <ThemedText style={styles.scoreValue}>{aiEvaluation.score_breakdown.grammar}/25</ThemedText>
+                      </View>
+                      
+                      <View style={styles.scoreRow}>
+                        <ThemedText style={styles.scoreLabel}>Vocabulary:</ThemedText>
+                        <ThemedText style={styles.scoreValue}>{aiEvaluation.score_breakdown.vocabulary}/20</ThemedText>
+                      </View>
+                      
+                      <View style={styles.scoreRow}>
+                        <ThemedText style={styles.scoreLabel}>Coherence:</ThemedText>
+                        <ThemedText style={styles.scoreValue}>{aiEvaluation.score_breakdown.coherence}/15</ThemedText>
+                      </View>
+                      
+                      <View style={styles.scoreRow}>
+                        <ThemedText style={styles.scoreLabel}>Keyword Usage:</ThemedText>
+                        <ThemedText style={styles.scoreValue}>{aiEvaluation.score_breakdown.keyword_usage}/15</ThemedText>
+                      </View>
+                    </>
+                  ) : (
+                    <>
+                      <View style={styles.scoreRow}>
+                        <ThemedText style={styles.scoreLabel}>Word Count:</ThemedText>
+                        <ThemedText style={styles.scoreValue}>
+                          {wordCount >= currentStory.minWords ? 
+                            `${Math.min(Math.floor((wordCount / currentStory.minWords) * 25), 50)}/50` : 
+                            `${Math.floor((wordCount / currentStory.minWords) * 25)}/50`}
+                        </ThemedText>
+                      </View>
+                      
+                      <View style={styles.scoreRow}>
+                        <ThemedText style={styles.scoreLabel}>Keywords Used:</ThemedText>
+                        <ThemedText style={styles.scoreValue}>{Math.min(keywordsUsed.length * 10, 50)}/50</ThemedText>
+                      </View>
+                      
+                      <View style={styles.scoreRow}>
+                        <ThemedText style={styles.scoreLabel}>Time Bonus:</ThemedText>
+                        <ThemedText style={styles.scoreValue}>
+                          {timeLeft > 0 ? Math.min(Math.floor(timeLeft / currentStory.timeLimit * 10), 10) : 0}/10
+                        </ThemedText>
+                      </View>
+                    </>
+                  )}
                   
-                  <View style={styles.scoreRow}>
-                    <ThemedText style={styles.scoreLabel}>Keywords Used:</ThemedText>
-                    <ThemedText style={styles.scoreValue}>{Math.min(keywordsUsed.length * 10, 50)}/50</ThemedText>
-                  </View>
+                  {aiEvaluation?.word_count_bonus && (
+                    <View style={styles.scoreRow}>
+                      <ThemedText style={styles.scoreLabel}>Word Count Bonus:</ThemedText>
+                      <ThemedText style={styles.scoreValue}>{aiEvaluation.word_count_bonus}/10</ThemedText>
+                    </View>
+                  )}
                   
-                  <View style={styles.scoreRow}>
-                    <ThemedText style={styles.scoreLabel}>Time Bonus:</ThemedText>
-                    <ThemedText style={styles.scoreValue}>
-                      {timeLeft > 0 ? Math.min(Math.floor(timeLeft / currentStory.timeLimit * 10), 10) : 0}/10
-                    </ThemedText>
-                  </View>
+                  {aiEvaluation?.time_management_bonus && (
+                    <View style={styles.scoreRow}>
+                      <ThemedText style={styles.scoreLabel}>Time Management:</ThemedText>
+                      <ThemedText style={styles.scoreValue}>{aiEvaluation.time_management_bonus}/5</ThemedText>
+                    </View>
+                  )}
                   
                   <View style={styles.totalScoreRow}>
                     <ThemedText style={styles.totalScoreLabel}>Total:</ThemedText>
                     <ThemedText style={styles.totalScoreValue}>
-                      {Math.min(Math.floor((wordCount / currentStory.minWords) * 25), 50) + 
-                       Math.min(keywordsUsed.length * 10, 50) + 
-                       (timeLeft > 0 ? Math.min(Math.floor(timeLeft / currentStory.timeLimit * 10), 10) : 0)}/110
+                      {aiEvaluation?.final_score || (
+                        Math.min(Math.floor((wordCount / currentStory.minWords) * 25), 50) + 
+                        Math.min(keywordsUsed.length * 10, 50) + 
+                        (timeLeft > 0 ? Math.min(Math.floor(timeLeft / currentStory.timeLimit * 10), 10) : 0)
+                      )}/100
                     </ThemedText>
                   </View>
                 </View>
@@ -584,6 +681,36 @@ export default function StoryTellingGame() {
                 <View style={styles.feedbackTextContainer}>
                   <ThemedText style={styles.feedbackText}>{feedback}</ThemedText>
                 </View>
+                
+                {aiEvaluation?.strengths && aiEvaluation.strengths.length > 0 && (
+                  <View style={styles.aiSection}>
+                    <ThemedText style={styles.aiSectionTitle}>✅ Strengths:</ThemedText>
+                    {aiEvaluation.strengths.map((strength: string, index: number) => (
+                      <ThemedText key={index} style={styles.aiListItem}>• {strength}</ThemedText>
+                    ))}
+                  </View>
+                )}
+                
+                {aiEvaluation?.improvements && aiEvaluation.improvements.length > 0 && (
+                  <View style={styles.aiSection}>
+                    <ThemedText style={styles.aiSectionTitle}>💡 Areas to Improve:</ThemedText>
+                    {aiEvaluation.improvements.map((improvement: string, index: number) => (
+                      <ThemedText key={index} style={styles.aiListItem}>• {improvement}</ThemedText>
+                    ))}
+                  </View>
+                )}
+                
+                {aiEvaluation?.detailed_analysis && (
+                  <View style={styles.aiSection}>
+                    <ThemedText style={styles.aiSectionTitle}>🔍 Detailed Analysis:</ThemedText>
+                    {Object.entries(aiEvaluation.detailed_analysis).map(([key, value]: [string, any]) => (
+                      <View key={key} style={styles.analysisItem}>
+                        <ThemedText style={styles.analysisLabel}>{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}:</ThemedText>
+                        <ThemedText style={styles.analysisValue}>{value}</ThemedText>
+                      </View>
+                    ))}
+                  </View>
+                )}
                 
                 <TouchableOpacity style={styles.nextButton} onPress={moveToNextStory}>
                   <ThemedText style={styles.nextButtonText}>
@@ -981,5 +1108,55 @@ const styles = StyleSheet.create({
   selectedFilterOptionText: {
     color: '#226cae',
     fontWeight: '600',
+  },
+  evaluationLoadingContainer: {
+    alignItems: 'center',
+    padding: 40,
+  },
+  evaluationLoadingText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#226cae',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  evaluationLoadingSubtext: {
+    fontSize: 14,
+    color: '#666666',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  aiSection: {
+    marginBottom: 16,
+    backgroundColor: 'rgba(34, 108, 174, 0.05)',
+    borderRadius: 8,
+    padding: 12,
+  },
+  aiSectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333333',
+    marginBottom: 8,
+  },
+  aiListItem: {
+    fontSize: 13,
+    color: '#666666',
+    lineHeight: 18,
+    marginBottom: 4,
+  },
+  analysisItem: {
+    marginBottom: 8,
+  },
+  analysisLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#333333',
+    marginBottom: 2,
+  },
+  analysisValue: {
+    fontSize: 13,
+    color: '#666666',
+    lineHeight: 18,
+    fontStyle: 'italic',
   },
 });

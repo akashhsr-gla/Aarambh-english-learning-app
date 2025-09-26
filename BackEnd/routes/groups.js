@@ -55,21 +55,32 @@ router.post('/create', authenticateToken, validateGroupCreation, async (req, res
       });
     }
 
-    // Check if user is already in an active group
+    // Check if user is already in an active group and leave it automatically
     const existingGroup = await Group.findOne({
       'participants.user': req.user._id,
       status: { $in: ['active', 'waiting'] }
     });
 
     if (existingGroup) {
-      return res.status(400).json({
-        success: false,
-        message: 'You are already in an active group'
+      // Automatically leave the previous group
+      await Group.findByIdAndUpdate(existingGroup._id, {
+        $pull: { participants: { user: req.user._id } },
+        $set: { 
+          status: existingGroup.participants.length <= 1 ? 'disbanded' : 'waiting',
+          updatedAt: new Date()
+        }
       });
+      
     }
 
+    // Clean up previous groups where user was host
+    await Group.deleteMany({ 
+      host: req.user._id, 
+      status: { $in: ['waiting', 'ready', 'disbanded', 'completed'] }
+    });
+
     // Generate join code
-    const joinCode = Math.random().toString(36).substr(2, 8).toUpperCase();
+    const joinCode = Math.random().toString(36).substring(2, 10).toUpperCase();
 
     // Create group
     const group = new Group({
@@ -82,6 +93,7 @@ router.post('/create', authenticateToken, validateGroupCreation, async (req, res
       password: isPrivate ? password : null,
       joinCode,
       host: req.user._id,
+      region: req.user.region, // Add user's region to the group
       participants: [{
         user: req.user._id,
         role: 'host',
@@ -97,7 +109,7 @@ router.post('/create', authenticateToken, validateGroupCreation, async (req, res
       groupSession: {
         maxParticipants,
         currentParticipants: 1,
-        sessionType: null, // Will be set when session starts
+        sessionType: 'chat', // Default to chat, will be changed when session starts
         isActive: false
       }
     });
@@ -157,7 +169,8 @@ router.get('/available', authenticateToken, async (req, res) => {
     // Build query
     const query = {
       status: { $in: ['waiting', 'active'] },
-      'participants.user': { $ne: req.user._id } // Exclude groups user is already in
+      'participants.user': { $ne: req.user._id }, // Exclude groups user is already in
+      region: req.user.region // Filter by user's region
     };
 
     if (level) {
@@ -179,6 +192,7 @@ router.get('/available', authenticateToken, async (req, res) => {
     const groups = await Group.find(query)
       .populate('host', 'name email profilePicture')
       .populate('participants.user', 'name email profilePicture')
+      .populate('region', 'name code')
       .sort({ createdAt: -1 })
       .limit(parseInt(limit))
       .skip((parseInt(page) - 1) * parseInt(limit));
@@ -188,32 +202,57 @@ router.get('/available', authenticateToken, async (req, res) => {
     res.json({
       success: true,
       data: {
-        groups: groups.map(group => ({
-          id: group._id,
-          title: group.title,
-          topic: group.topic,
-          description: group.description,
-          level: group.level,
-          maxParticipants: group.maxParticipants,
-          isPrivate: group.isPrivate,
-          status: group.status,
-          host: {
-            id: group.host._id,
-            name: group.host.name,
-            email: group.host.email,
-            profilePicture: group.host.profilePicture
-          },
-          participants: group.participants.map(p => ({
-            id: p.user._id,
-            name: p.user.name,
-            email: p.user.email,
-            profilePicture: p.user.profilePicture,
-            role: p.role,
-            isActive: p.isActive
-          })),
-          settings: group.settings,
-          createdAt: group.createdAt
-        })),
+        groups: groups.map(group => {
+          try {
+            return {
+              id: group._id,
+              title: group.title || '',
+              topic: group.topic || '',
+              description: group.description || '',
+              level: group.level || 'beginner',
+              maxParticipants: group.maxParticipants || 0,
+              isPrivate: group.isPrivate || false,
+              status: group.status || 'waiting',
+              host: group.host ? {
+                id: group.host._id,
+                name: group.host.name || '',
+                email: group.host.email || '',
+                profilePicture: group.host.profilePicture || null
+              } : null,
+              participants: (() => {
+                try {
+                  if (!Array.isArray(group.participants)) return [];
+                  return group.participants
+                    .map(p => {
+                      try {
+                        if (!p || !p.user || !p.user._id) return null;
+                        return {
+                          id: p.user._id,
+                          name: p.user.name || '',
+                          email: p.user.email || '',
+                          profilePicture: p.user.profilePicture || null,
+                          role: p.role || 'participant',
+                          isActive: p.isActive !== false
+                        };
+                      } catch (err) {
+                        console.error('Error processing participant:', err);
+                        return null;
+                      }
+                    })
+                    .filter(Boolean);
+                } catch (err) {
+                  console.error('Error processing participants:', err);
+                  return [];
+                }
+              })(),
+              settings: group.settings || {},
+              createdAt: group.createdAt || new Date()
+            };
+          } catch (err) {
+            console.error('Error processing group:', err, 'Group ID:', group._id);
+            return null;
+          }
+        }).filter(Boolean),
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
@@ -235,8 +274,11 @@ router.get('/available', authenticateToken, async (req, res) => {
 // 3. JOIN GROUP BY ID
 router.post('/join', authenticateToken, validateJoinGroup, async (req, res) => {
   try {
+  
+    
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+
       return res.status(400).json({
         success: false,
         message: 'Validation errors',
@@ -296,7 +338,7 @@ router.post('/join', authenticateToken, validateJoinGroup, async (req, res) => {
 
     // Update group status if it reaches minimum participants
     if (group.participants.length >= 2 && group.status === 'waiting') {
-      group.status = 'ready';
+      group.status = 'waiting'; // Keep as waiting until host starts the session
     }
 
     await group.save();
@@ -310,7 +352,7 @@ router.post('/join', authenticateToken, validateJoinGroup, async (req, res) => {
       message: 'Successfully joined group',
       data: {
         groupId: group._id,
-        participants: group.participants.map(p => ({
+        participants: group.participants.filter(p => p.user).map(p => ({
           id: p.user._id,
           name: p.user.name,
           email: p.user.email,
@@ -362,9 +404,89 @@ router.post('/join-by-code', authenticateToken, async (req, res) => {
       });
     }
 
-    // Use the same logic as join by ID
-    req.body.groupId = group._id;
-    return router.handle(req, res, () => {});
+    // Check if group is full
+    if (group.participants.length >= group.maxParticipants) {
+      return res.status(400).json({
+        success: false,
+        message: 'Group is full'
+      });
+    }
+
+    // Check if group is private and password is required
+    if (group.isPrivate) {
+      if (!password || group.password !== password) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid password for private group'
+        });
+      }
+    }
+
+    // Check if user is already in the group
+    const existingParticipant = group.participants.find(p => 
+      p.user.toString() === req.user._id.toString()
+    );
+
+    if (existingParticipant) {
+      return res.status(400).json({
+        success: false,
+        message: 'You are already in this group'
+      });
+    }
+
+    // Add user to group
+    group.participants.push({
+      user: req.user._id,
+      role: 'participant',
+      joinedAt: new Date(),
+      isActive: true
+    });
+
+    group.groupSession.currentParticipants = group.participants.length;
+
+    // Update group status if it reaches minimum participants
+    if (group.participants.length >= 2 && group.status === 'waiting') {
+      group.status = 'waiting'; // Keep as waiting until host starts the session
+    }
+
+    await group.save();
+
+    // Populate participants
+    await group.populate('participants.user', 'name email profilePicture');
+    await group.populate('host', 'name email profilePicture');
+
+    res.json({
+      success: true,
+      message: 'Successfully joined group by code',
+      data: {
+        groupId: group._id,
+        participants: group.participants.filter(p => p.user).map(p => ({
+          id: p.user._id,
+          name: p.user.name,
+          email: p.user.email,
+          profilePicture: p.user.profilePicture,
+          role: p.role,
+          isActive: p.isActive,
+          joinedAt: p.joinedAt
+        })),
+        group: {
+          id: group._id,
+          title: group.title,
+          topic: group.topic,
+          level: group.level,
+          maxParticipants: group.maxParticipants,
+          isPrivate: group.isPrivate,
+          status: group.status,
+          joinCode: group.joinCode,
+          host: group.host ? {
+            id: group.host._id,
+            name: group.host.name,
+            email: group.host.email,
+            profilePicture: group.host.profilePicture
+          } : null
+        }
+      }
+    });
 
   } catch (error) {
     console.error('Join group by code error:', error);
@@ -391,49 +513,52 @@ router.get('/:groupId', authenticateToken, async (req, res) => {
       });
     }
 
-    // Check if user is a participant
+    // Check if user is a participant (for detailed access)
     const isParticipant = group.participants.some(p => 
-      p.user._id.toString() === req.user._id.toString()
+      p.user && p.user._id.toString() === req.user._id.toString()
     );
 
-    if (!isParticipant) {
+    // Allow viewing group details if user is from the same region (for browsing)
+    const isSameRegion = group.region.toString() === req.user.region.toString();
+    
+    if (!isParticipant && !isSameRegion) {
       return res.status(403).json({
         success: false,
-        message: 'You are not a participant in this group'
+        message: 'You can only view groups from your region'
       });
     }
+
 
     res.json({
       success: true,
       data: {
-        group: {
-          id: group._id,
-          title: group.title,
-          topic: group.topic,
-          description: group.description,
-          level: group.level,
-          maxParticipants: group.maxParticipants,
-          isPrivate: group.isPrivate,
-          status: group.status,
-          host: {
-            id: group.host._id,
-            name: group.host.name,
-            email: group.host.email,
-            profilePicture: group.host.profilePicture
-          },
-          participants: group.participants.map(p => ({
-            id: p.user._id,
-            name: p.user.name,
-            email: p.user.email,
-            profilePicture: p.user.profilePicture,
-            role: p.role,
-            isActive: p.isActive,
-            joinedAt: p.joinedAt
-          })),
-          settings: group.settings,
-          groupSession: group.groupSession,
-          createdAt: group.createdAt
-        }
+        id: group._id,
+        title: group.title,
+        topic: group.topic,
+        description: group.description,
+        level: group.level,
+        maxParticipants: group.maxParticipants,
+        isPrivate: group.isPrivate,
+        joinCode: group.joinCode,
+        status: group.status,
+        host: group.host ? {
+          id: group.host._id,
+          name: group.host.name,
+          email: group.host.email,
+          profilePicture: group.host.profilePicture
+        } : null,
+        participants: group.participants.filter(p => p.user).map(p => ({
+          id: p.user._id,
+          name: p.user.name,
+          email: p.user.email,
+          profilePicture: p.user.profilePicture,
+          role: p.role,
+          isActive: p.isActive,
+          joinedAt: p.joinedAt
+        })),
+        settings: group.settings,
+        groupSession: group.groupSession,
+        createdAt: group.createdAt
       }
     });
 
@@ -620,6 +745,7 @@ router.post('/:groupId/start', authenticateToken, async (req, res) => {
   try {
     const { groupId } = req.params;
     const { sessionType } = req.body;
+    
 
     if (!['chat', 'voice', 'video'].includes(sessionType)) {
       return res.status(400).json({
@@ -648,11 +774,26 @@ router.post('/:groupId/start', authenticateToken, async (req, res) => {
       });
     }
 
-    // Check if group has enough participants
-    if (group.participants.length < 2) {
+    // Check if group has enough participants based on group size
+    // For groups with maxParticipants 3-5: require at least 3 participants
+    // For groups with maxParticipants 6-10: require at least 4 participants  
+    // For groups with maxParticipants 11+: require at least 5 participants
+    let minParticipants;
+    if (group.maxParticipants <= 5) {
+      minParticipants = 3;
+    } else if (group.maxParticipants <= 10) {
+      minParticipants = 4;
+    } else {
+      minParticipants = 5;
+    }
+    
+    // Ensure minimum is not more than maxParticipants
+    minParticipants = Math.min(minParticipants, group.maxParticipants);
+    
+    if (group.participants.length < minParticipants) {
       return res.status(400).json({
         success: false,
-        message: 'Need at least 2 participants to start session'
+        message: `Need at least ${minParticipants} participants to start session (current: ${group.participants.length}/${group.maxParticipants})`
       });
     }
 
@@ -711,11 +852,17 @@ router.post('/:groupId/leave', authenticateToken, async (req, res) => {
 
     const participant = group.participants[participantIndex];
 
-    // If user is the host, disband the group
+    // If user is the host, end the session for everyone
     if (participant.role === 'host') {
-      group.status = 'disbanded';
+      group.status = 'completed';
       group.groupSession.isActive = false;
       group.groupSession.endedAt = new Date();
+      
+      if (group.groupSession.startedAt) {
+        group.groupSession.duration = Math.round(
+          (group.groupSession.endedAt - group.groupSession.startedAt) / 1000
+        );
+      }
     } else {
       // Remove participant
       group.participants.splice(participantIndex, 1);
@@ -733,7 +880,7 @@ router.post('/:groupId/leave', authenticateToken, async (req, res) => {
 
     res.json({
       success: true,
-      message: participant.role === 'host' ? 'Group disbanded' : 'Left group successfully',
+      message: participant.role === 'host' ? 'Group session ended' : 'Left group successfully',
       data: {
         groupId: group._id,
         status: group.status,
@@ -742,7 +889,6 @@ router.post('/:groupId/leave', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Leave group error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error'
@@ -772,13 +918,13 @@ router.get('/my/active', authenticateToken, async (req, res) => {
           maxParticipants: group.maxParticipants,
           isPrivate: group.isPrivate,
           status: group.status,
-          host: {
+          host: group.host ? {
             id: group.host._id,
             name: group.host.name,
             email: group.host.email,
             profilePicture: group.host.profilePicture
-          },
-          participants: group.participants.map(p => ({
+          } : null,
+          participants: group.participants.filter(p => p.user).map(p => ({
             id: p.user._id,
             name: p.user.name,
             email: p.user.email,
@@ -851,10 +997,229 @@ router.post('/:groupId/end-session', authenticateToken, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('End group session error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error'
+    });
+  }
+});
+
+// 11. GROUP WEBRTC SIGNALING ROUTES
+
+// Get WebRTC signaling data
+router.get('/:groupId/webrtc', authenticateToken, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    
+    const group = await Group.findById(groupId);
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        message: 'Group not found'
+      });
+    }
+
+    // Check if user is participant
+    const isParticipant = group.participants.some(p => 
+      (p.user?._id || p.user).toString() === req.user._id.toString()
+    );
+    
+    if (!isParticipant) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not a group participant'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        signaling: group.groupSession?.signaling || {
+          offers: [],
+          answers: [],
+          iceCandidates: []
+        }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+});
+
+// Post WebRTC offer
+router.post('/:groupId/webrtc/offer', authenticateToken, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { offer, targetUserId } = req.body;
+    
+    const group = await Group.findById(groupId);
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        message: 'Group not found'
+      });
+    }
+
+    // Initialize signaling if needed
+    if (!group.groupSession.signaling) {
+      group.groupSession.signaling = {
+        offers: [],
+        answers: [],
+        iceCandidates: []
+      };
+    }
+
+    // Add offer
+    group.groupSession.signaling.offers.push({
+      fromUserId: req.user._id,
+      targetUserId,
+      offer,
+      timestamp: new Date()
+    });
+
+    await group.save();
+
+    res.json({
+      success: true,
+      message: 'Offer posted'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+});
+
+// Post WebRTC answer
+router.post('/:groupId/webrtc/answer', authenticateToken, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { answer, targetUserId } = req.body;
+    
+    const group = await Group.findById(groupId);
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        message: 'Group not found'
+      });
+    }
+
+    // Initialize signaling if needed
+    if (!group.groupSession.signaling) {
+      group.groupSession.signaling = {
+        offers: [],
+        answers: [],
+        iceCandidates: []
+      };
+    }
+
+    // Add answer
+    group.groupSession.signaling.answers.push({
+      fromUserId: req.user._id,
+      targetUserId,
+      answer,
+      timestamp: new Date()
+    });
+
+    await group.save();
+
+    res.json({
+      success: true,
+      message: 'Answer posted'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+});
+
+// Post ICE candidate
+router.post('/:groupId/webrtc/ice', authenticateToken, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    const { candidate, targetUserId } = req.body;
+    
+    const group = await Group.findById(groupId);
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        message: 'Group not found'
+      });
+    }
+
+    // Initialize signaling if needed
+    if (!group.groupSession.signaling) {
+      group.groupSession.signaling = {
+        offers: [],
+        answers: [],
+        iceCandidates: []
+      };
+    }
+
+    // Add ICE candidate
+    group.groupSession.signaling.iceCandidates.push({
+      fromUserId: req.user._id,
+      targetUserId,
+      candidate,
+      timestamp: new Date()
+    });
+
+    await group.save();
+
+    res.json({
+      success: true,
+      message: 'ICE candidate posted'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
+    });
+  }
+});
+
+// Clear WebRTC signaling
+router.post('/:groupId/webrtc/clear', authenticateToken, async (req, res) => {
+  try {
+    const { groupId } = req.params;
+    
+    const group = await Group.findById(groupId);
+    if (!group) {
+      return res.status(404).json({
+        success: false,
+        message: 'Group not found'
+      });
+    }
+
+    // Clear signaling data
+    if (group.groupSession) {
+      group.groupSession.signaling = {
+        offers: [],
+        answers: [],
+        iceCandidates: []
+      };
+      await group.save();
+    }
+
+    res.json({
+      success: true,
+      message: 'Signaling cleared'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: error.message
     });
   }
 });

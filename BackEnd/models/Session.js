@@ -10,7 +10,7 @@ const sessionSchema = new mongoose.Schema({
   },
   sessionType: {
     type: String,
-    enum: ['video_call', 'voice_call', 'chat', 'group_video_call', 'group_voice_call', 'group_chat', 'game'],
+    enum: ['video_call', 'voice_call', 'chat', 'group_video_call', 'group_voice_call', 'group_chat', 'group_discussion', 'game'],
     required: true
   },
   title: {
@@ -127,10 +127,48 @@ const sessionSchema = new mongoose.Schema({
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Game'
     },
+    gameId: {
+      type: String, // For non-ObjectId game identifiers
+      required: false
+    },
     gameType: {
       type: String,
       enum: ['grammar', 'pronunciation', 'identification', 'storytelling']
     },
+    difficulty: {
+      type: String,
+      enum: ['easy', 'medium', 'hard', 'beginner', 'intermediate', 'advanced']
+    },
+    level: {
+      type: Number,
+      default: 1
+    },
+    currentQuestionIndex: {
+      type: Number,
+      default: 0
+    },
+    totalQuestions: {
+      type: Number,
+      default: 0
+    },
+    timeLeft: {
+      type: Number, // in seconds
+      default: 0
+    },
+    timeSpent: {
+      type: Number, // in seconds
+      default: 0
+    },
+    answers: [{
+      questionIndex: Number,
+      selectedAnswer: String,
+      isCorrect: Boolean,
+      timeTaken: Number, // in seconds
+      answeredAt: {
+        type: Date,
+        default: Date.now
+      }
+    }],
     scores: [{
       user: {
         type: mongoose.Schema.Types.ObjectId,
@@ -147,8 +185,20 @@ const sessionSchema = new mongoose.Schema({
     }],
     gameStatus: {
       type: String,
-      enum: ['not_started', 'in_progress', 'completed'],
+      enum: ['not_started', 'in_progress', 'paused', 'completed', 'abandoned'],
       default: 'not_started'
+    },
+    pausedAt: {
+      type: Date
+    },
+    resumedAt: {
+      type: Date
+    },
+    startTime: {
+      type: Date
+    },
+    endTime: {
+      type: Date
     }
   },
   
@@ -297,22 +347,65 @@ const sessionSchema = new mongoose.Schema({
     }
   },
   
-  // Group Session Specific Fields
+  // Group Session Specific Fields  
   groupSession: {
+    groupId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Group'
+    },
     groupName: {
       type: String,
       trim: true
+    },
+    topic: {
+      type: String,
+      trim: true
+    },
+    level: {
+      type: String,
+      enum: ['beginner', 'intermediate', 'advanced'],
+      default: 'beginner'
+    },
+    discussionType: {
+      type: String,
+      enum: ['chat', 'voice', 'video'],
+      default: 'chat'
     },
     maxParticipants: {
       type: Number,
       default: 10
     },
+    currentParticipants: {
+      type: Number,
+      default: 0
+    },
     isPublic: {
       type: Boolean,
       default: false
     },
+    isPrivate: {
+      type: Boolean,
+      default: false
+    },
+    password: {
+      type: String
+    },
     joinCode: {
       type: String
+    },
+    sessionSettings: {
+      allowVideo: {
+        type: Boolean,
+        default: true
+      },
+      allowVoice: {
+        type: Boolean,
+        default: true
+      },
+      allowChat: {
+        type: Boolean,
+        default: true
+      }
     }
   },
   
@@ -474,6 +567,58 @@ sessionSchema.methods.addGameScore = function(userId, score, maxScore, timeTaken
     });
     
     this.gameSession.gameStatus = 'completed';
+    this.gameSession.endTime = new Date();
+  }
+};
+
+// Method to update game progress
+sessionSchema.methods.updateGameProgress = function(currentQuestionIndex, timeLeft, answers) {
+  if (this.sessionType === 'game' && this.gameSession) {
+    this.gameSession.currentQuestionIndex = currentQuestionIndex;
+    this.gameSession.timeLeft = timeLeft;
+    this.gameSession.gameStatus = 'in_progress';
+    
+    if (answers && Array.isArray(answers)) {
+      this.gameSession.answers = answers;
+    }
+    
+    // Calculate time spent
+    if (this.gameSession.startTime) {
+      this.gameSession.timeSpent = Math.floor((new Date() - this.gameSession.startTime) / 1000);
+    }
+  }
+};
+
+// Method to pause game
+sessionSchema.methods.pauseGame = function() {
+  if (this.sessionType === 'game' && this.gameSession) {
+    this.gameSession.gameStatus = 'paused';
+    this.gameSession.pausedAt = new Date();
+  }
+};
+
+// Method to resume game
+sessionSchema.methods.resumeGame = function() {
+  if (this.sessionType === 'game' && this.gameSession) {
+    this.gameSession.gameStatus = 'in_progress';
+    this.gameSession.resumedAt = new Date();
+  }
+};
+
+// Method to start game session
+sessionSchema.methods.startGame = function(gameId, gameType, difficulty, totalQuestions) {
+  if (this.sessionType === 'game') {
+    this.gameSession = this.gameSession || {};
+    this.gameSession.game = gameId;
+    this.gameSession.gameType = gameType;
+    this.gameSession.difficulty = difficulty;
+    this.gameSession.totalQuestions = totalQuestions;
+    this.gameSession.gameStatus = 'in_progress';
+    this.gameSession.startTime = new Date();
+    this.gameSession.currentQuestionIndex = 0;
+    this.gameSession.answers = [];
+    
+    this.startSession();
   }
 };
 
@@ -521,6 +666,7 @@ sessionSchema.statics.getUserSessions = function(userId, options = {}) {
     .populate('host', 'name email')
     .populate('participants.user', 'name email')
     .populate('gameSession.game', 'title gameType')
+    .populate('groupSession.groupId', 'title topic level')
     .populate('region', 'name')
     .sort({ createdAt: -1 });
 };

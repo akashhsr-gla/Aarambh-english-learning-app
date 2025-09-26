@@ -8,7 +8,7 @@ import GameHeader from '../components/GameHeader';
 import { ThemedText } from '../components/ThemedText';
 import FeatureAccessWrapper from './components/FeatureAccessWrapper';
 import { useFeatureAccess } from './hooks/useFeatureAccess';
-import { gamesAPI } from './services/api';
+import { gamesAPI, sessionsAPI } from './services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -80,6 +80,33 @@ export default function IdentificationGame() {
     };
   };
   
+  // Save identification session
+  const saveIdentificationSession = async () => {
+    if (gameItems.length === 0) return;
+    
+    try {
+      await sessionsAPI.createOrUpdateGameSession({
+        gameId: 'identification-game-id',
+        gameType: 'identification',
+        difficulty: currentItem.difficulty.toLowerCase(),
+        currentQuestionIndex: currentItemIndex,
+        timeLeft,
+        answers: [],
+        score,
+        totalQuestions: gameItems.length
+      });
+    } catch (error) {
+      console.error('Error saving identification session:', error);
+    }
+  };
+
+  // Save session when game state changes
+  useEffect(() => {
+    if (gameItems.length > 0 && !gameOver) {
+      saveIdentificationSession();
+    }
+  }, [currentItemIndex, score]);
+
   // Initialize game with API data
   useEffect(() => {
     const fetchGameData = async () => {

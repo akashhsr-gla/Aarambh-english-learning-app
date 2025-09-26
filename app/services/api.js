@@ -1,4 +1,5 @@
 // Configure API base URL based on platform
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 // Lazy load AsyncStorage to avoid NativeModule null in web or if not linked yet
 let AsyncStorage = null;
@@ -10,18 +11,23 @@ try {
 }
 
 let API_BASE_URL;
-API_BASE_URL = 'https://aarambh-english-learning-app.onrender.com/api';
+// Prefer env var, then app.json extra (supports multiple expo constant shapes), then localhost fallback
+const extra = (Constants?.expoConfig?.extra)
+  || (Constants?.manifestExtra)
+  || (Constants?.manifest && Constants.manifest.extra)
+  || {};
+API_BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL || extra.apiBaseUrl || (Platform.OS === 'android' ? 'http://10.0.2.2:5000/api' : 'http://localhost:5000/api');
+if (__DEV__) {
+  try { console.log('🔑 API_BASE_URL resolved to:', API_BASE_URL, '| Platform:', Platform.OS); } catch {}
+}
 
 // Helper function to make API requests
 const apiRequest = async (endpoint, options = {}) => {
   const url = `${API_BASE_URL}${endpoint}`;
+  if (__DEV__) {
+    try { console.log('➡️ API', options.method || 'GET', url); } catch {}
+  }
   
-  console.log('🌐 API Request:', {
-    platform: Platform.OS,
-    baseUrl: API_BASE_URL,
-    endpoint,
-    fullUrl: url
-  });
   
   const defaultOptions = {
     headers: {
@@ -33,22 +39,12 @@ const apiRequest = async (endpoint, options = {}) => {
 
   // Add authorization header if token exists
   const token = await getStoredToken();
-  console.log('🔑 Retrieved token:', token ? `${token.substring(0, 20)}...` : 'No token');
   if (token) {
     defaultOptions.headers.Authorization = `Bearer ${token}`;
   }
 
   try {
-    console.log('📡 Making fetch request to:', url);
-    console.log('📡 Request options:', { ...defaultOptions, ...options });
-    
     const response = await fetch(url, { ...defaultOptions, ...options });
-    console.log('📡 Response received:', {
-      status: response.status,
-      statusText: response.statusText,
-      ok: response.ok,
-      headers: Object.fromEntries(response.headers.entries())
-    });
     
     // Handle empty bodies (204/304) gracefully and avoid double-reading the body
     if (response.status === 204 || response.status === 304) {
@@ -69,7 +65,6 @@ const apiRequest = async (endpoint, options = {}) => {
         const text = await response.text();
         try { data = JSON.parse(text); } catch { data = { raw: text }; }
       }
-      console.log('📡 Response data:', data);
     } catch (jsonError) {
       console.error('❌ JSON Parse Error:', jsonError);
       try {
@@ -82,7 +77,14 @@ const apiRequest = async (endpoint, options = {}) => {
     }
     
     if (!response.ok) {
-      throw new Error(data.message || 'API request failed');
+      // For non-successful responses, return the data so we can access error details
+      if (data && data.message) {
+        const error = new Error(data.message);
+        error.statusCode = response.status;
+        error.errorData = data;
+        throw error;
+      }
+      throw new Error('API request failed');
     }
     
     return data;
@@ -101,15 +103,20 @@ const apiRequest = async (endpoint, options = {}) => {
 // Token management (cross-platform)
 const getStoredToken = async () => {
   try {
+    
+    let token = null;
     if (Platform.OS === 'web') {
-      return typeof window !== 'undefined' ? window.localStorage.getItem('authToken') : null;
+      if (typeof window !== 'undefined') {
+        token = window.localStorage.getItem('authToken');
+      }
     } else if (AsyncStorage && AsyncStorage.getItem) {
-      return await AsyncStorage.getItem('authToken');
+      token = await AsyncStorage.getItem('authToken');
     } else {
-      return global.authToken || null;
+      token = global.authToken || null;
     }
+    return token;
   } catch (err) {
-    console.error('Error getting stored token:', err);
+    console.error('❌ Error getting stored token:', err);
     return null;
   }
 };
@@ -128,7 +135,7 @@ const setStoredToken = async (token) => {
       }
     }
   } catch (err) {
-    console.error('Error setting stored token:', err);
+    console.error('❌ Error setting stored token:', err);
   }
 };
 
@@ -464,6 +471,49 @@ export const sessionsAPI = {
   getSession: async (sessionId) => {
     return await apiRequest(`/sessions/${sessionId}`);
   },
+
+  // Get recent sessions
+  getRecentSessions: async (sessionType = null, limit = 10) => {
+    const params = new URLSearchParams({ limit: limit.toString() });
+    if (sessionType) params.append('sessionType', sessionType);
+    return await apiRequest(`/sessions/recent?${params.toString()}`);
+  },
+
+  // Game session management
+  createOrUpdateGameSession: async (gameData) => {
+    return await apiRequest('/sessions/games/create-or-update', {
+      method: 'POST',
+      body: JSON.stringify(gameData)
+    });
+  },
+
+  getActiveGameSession: async () => {
+    return await apiRequest('/sessions/games/active');
+  },
+
+  pauseGameSession: async (sessionId) => {
+    return await apiRequest(`/sessions/games/${sessionId}/pause`, {
+      method: 'POST'
+    });
+  },
+
+  resumeGameSession: async (sessionId) => {
+    return await apiRequest(`/sessions/games/${sessionId}/resume`, {
+      method: 'POST'
+    });
+  },
+
+  // Group discussion session management
+  createOrUpdateGroupSession: async (groupData) => {
+    return await apiRequest('/sessions/groups/create-or-update', {
+      method: 'POST',
+      body: JSON.stringify(groupData)
+    });
+  },
+
+  getActiveGroupSession: async () => {
+    return await apiRequest('/sessions/groups/active');
+  },
 };
 
 // Lectures API
@@ -639,9 +689,13 @@ export const groupsAPI = {
 
   // Join group by ID
   joinGroup: async (groupId, password = null) => {
+    const body = { groupId };
+    if (password) {
+      body.password = password;
+    }
     return await apiRequest('/groups/join', {
       method: 'POST',
-      body: JSON.stringify({ groupId, password }),
+      body: JSON.stringify(body),
     });
   },
 
@@ -728,6 +782,139 @@ export const groupsAPI = {
   },
 };
 
+// Chat API (AI Language Assistant)
+export const chatAPI = {
+  // Create a new conversation
+  createConversation: async (conversationData = {}) => {
+    return await apiRequest('/chat/conversations', {
+      method: 'POST',
+      body: JSON.stringify(conversationData),
+    });
+  },
+
+  // Get user's conversations
+  getConversations: async (filters = {}) => {
+    const queryParams = new URLSearchParams({
+      limit: '10',
+      ...filters
+    }).toString();
+    return await apiRequest(`/chat/conversations?${queryParams}`);
+  },
+
+  // Get specific conversation with messages
+  getConversation: async (conversationId) => {
+    return await apiRequest(`/chat/conversations/${conversationId}`);
+  },
+
+  // Send message and get AI response
+  sendMessage: async (conversationId, message, options = {}) => {
+    const messageData = {
+      message,
+      ...options
+    };
+    return await apiRequest(`/chat/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify(messageData),
+    });
+  },
+
+  // Update conversation settings
+  updateConversation: async (conversationId, updates) => {
+    return await apiRequest(`/chat/conversations/${conversationId}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  },
+
+  // Delete conversation
+  deleteConversation: async (conversationId) => {
+    return await apiRequest(`/chat/conversations/${conversationId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  // Get chat statistics
+  getStats: async () => {
+    return await apiRequest('/chat/stats');
+  },
+
+  // Get suggested questions
+  getSuggestions: async () => {
+    return await apiRequest('/chat/suggestions');
+  },
+
+  // Check chat service health
+  checkHealth: async () => {
+    return await apiRequest('/chat/health');
+  },
+};
+
+export { apiRequest };
+
+// Evaluation API (define before exporting the API object)
+const evaluationAPI = {
+  // Evaluate pronunciation
+  evaluatePronunciation: async (data) => {
+    console.log('📤 Sending pronunciation evaluation request:', data);
+    try {
+      const response = await apiRequest('/evaluation/pronunciation', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+      console.log('📥 Pronunciation evaluation response:', response);
+      return response;
+    } catch (error) {
+      console.error('❌ Pronunciation evaluation API error:', error);
+      throw error;
+    }
+  },
+
+  // Evaluate pronunciation with audio file
+  evaluatePronunciationAudio: async (audioFile, targetWord, difficulty = 'medium', gameId = null, sessionId = null) => {
+    const formData = new FormData();
+    formData.append('audio', audioFile);
+    formData.append('targetWord', targetWord);
+    formData.append('difficulty', difficulty);
+    if (gameId) formData.append('gameId', gameId);
+    if (sessionId) formData.append('sessionId', sessionId);
+
+    return await apiRequest('/evaluation/pronunciation/audio', {
+      method: 'POST',
+      body: formData,
+      headers: {
+        // Don't set Content-Type, let browser set it for FormData
+      },
+    });
+  },
+
+  // Evaluate story
+  evaluateStory: async (data) => {
+    return await apiRequest('/evaluation/story', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  // Get evaluation history
+  getEvaluationHistory: async (type = null, limit = 10, offset = 0) => {
+    const params = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString(),
+    });
+    if (type) params.append('type', type);
+    
+    return await apiRequest(`/evaluation/history?${params}`);
+  },
+
+  // Get evaluation statistics
+  getEvaluationStats: async (timeframe = '30d') => {
+    return await apiRequest(`/evaluation/stats?timeframe=${timeframe}`);
+  },
+};
+
+// Named export so screens can import { evaluation }
+export const evaluation = evaluationAPI;
+
 export default {
   auth: authAPI,
   games: gamesAPI,
@@ -741,4 +928,6 @@ export default {
   referrals: referralsAPI,
   teacher: teacherAPI,
   groups: groupsAPI,
+  chat: chatAPI,
+  evaluation: evaluationAPI,
 };

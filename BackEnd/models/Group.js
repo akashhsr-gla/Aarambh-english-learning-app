@@ -196,6 +196,11 @@ const groupSchema = new mongoose.Schema({
   },
   groupSession: groupSessionSchema,
   messages: [messageSchema],
+  region: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Region',
+    required: true
+  },
   createdAt: {
     type: Date,
     default: Date.now
@@ -210,6 +215,7 @@ const groupSchema = new mongoose.Schema({
 groupSchema.index({ joinCode: 1 });
 groupSchema.index({ status: 1 });
 groupSchema.index({ level: 1 });
+groupSchema.index({ region: 1 });
 groupSchema.index({ 'participants.user': 1 });
 groupSchema.index({ createdAt: -1 });
 
@@ -285,8 +291,24 @@ groupSchema.methods.removeParticipant = function(userId) {
 
 // Method to start session
 groupSchema.methods.startSession = function(sessionType) {
-  if (this.participants.length < 2) {
-    throw new Error('Need at least 2 participants to start session');
+  // Calculate minimum participants based on group size
+  // For groups with maxParticipants 3-5: require at least 3 participants
+  // For groups with maxParticipants 6-10: require at least 4 participants  
+  // For groups with maxParticipants 11+: require at least 5 participants
+  let minParticipants;
+  if (this.maxParticipants <= 5) {
+    minParticipants = 3;
+  } else if (this.maxParticipants <= 10) {
+    minParticipants = 4;
+  } else {
+    minParticipants = 5;
+  }
+  
+  // Ensure minimum is not more than maxParticipants
+  minParticipants = Math.min(minParticipants, this.maxParticipants);
+  
+  if (this.participants.length < minParticipants) {
+    throw new Error(`Need at least ${minParticipants} participants to start session (current: ${this.participants.length}/${this.maxParticipants})`);
   }
   
   this.status = 'active';

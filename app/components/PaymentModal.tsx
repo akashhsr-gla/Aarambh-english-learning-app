@@ -1,16 +1,27 @@
 import { FontAwesome } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Dimensions,
   Modal,
+  Platform,
   StyleSheet,
   TouchableOpacity,
   View
 } from 'react-native';
 import { ThemedText } from '../../components/ThemedText';
 import { ThemedView } from '../../components/ThemedView';
+import { transactionsAPI } from '../services/api';
+// Optional: If react-native-razorpay is installed, we can require it dynamically
+let RazorpayCheckout: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  RazorpayCheckout = require('react-native-razorpay');
+} catch (e) {
+  RazorpayCheckout = null;
+}
 
 const { width, height } = Dimensions.get('window');
 
@@ -20,7 +31,7 @@ interface PaymentPlan {
   name: string;
   price: number;
   duration: number;
-  features: string[];
+  features: (string | { name?: string; description?: string; isIncluded?: boolean; _id?: string })[];
   description: string;
 }
 
@@ -42,38 +53,37 @@ export default function PaymentModal({
   const [loading, setLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'razorpay' | 'other'>('razorpay');
 
+  const loadRazorpayScriptIfNeeded = async () => {
+    if (typeof document === 'undefined') return false;
+    const existing = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
+    if (existing) return true;
+    return await new Promise<boolean>((resolve) => {
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.head.appendChild(script);
+    });
+  };
+
   const handlePayment = async () => {
     if (!plan) return;
 
     setLoading(true);
     try {
-      // Create Razorpay order
-      const orderResponse = await fetch('https://aarambh-english-learning-app.onrender.com/api/transactions/create-order', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`, // Replace with your token storage
-        },
-        body: JSON.stringify({
-          planId: (plan.id || plan._id),
-          amount: plan.price * 100, // Convert to paise
-        }),
-      });
-
-      const orderData = await orderResponse.json();
-
-      if (!orderData.success) {
-        throw new Error(orderData.message || 'Failed to create order');
-      }
+      // Create Razorpay order via backend API
+      const orderResp = await transactionsAPI.createOrder({ planId: (plan.id || plan._id) });
+      if (!orderResp.success) throw new Error(orderResp.message || 'Failed to create order');
+      const { orderId, amount, currency, transactionId } = orderResp.data;
 
       // Initialize Razorpay
-      const options = {
-        key: process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID || 'rzp_test_1234567890', // Replace with your key
-        amount: orderData.order.amount,
-        currency: 'INR',
+      const options: any = {
+        key: (process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID as string) || (Constants?.expoConfig?.extra as any)?.razorpayKeyId || 'rzp_test_placeholder',
+        amount: Math.round((amount || plan.price) * 100),
+        currency: currency || 'INR',
         name: 'Aarambh App',
         description: plan.name,
-        order_id: orderData.order.id,
+        order_id: orderId,
         prefill: {
           email: 'user@example.com', // Replace with actual user email
           contact: '9999999999', // Replace with actual user contact
@@ -81,27 +91,25 @@ export default function PaymentModal({
         theme: {
           color: '#226cae',
         },
-        handler: async (response: any) => {
+        modal: {
+          ondismiss: () => {
+            setLoading(false);
+          },
+        },
+      };
+      
+      // Web checkout uses handler callback
+      if (typeof window !== 'undefined') {
+        options.handler = async (response: any) => {
           try {
-            // Verify payment
-            const verifyResponse = await fetch('https://aarambh-english-learning-app.onrender.com/api/transactions/verify-payment', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${localStorage.getItem('token')}`,
-              },
-              body: JSON.stringify({
-                razorpayOrderId: response.razorpay_order_id,
-                razorpayPaymentId: response.razorpay_payment_id,
-                razorpaySignature: response.razorpay_signature,
-                planId: (plan.id || plan._id),
-              }),
+            const verifyData = await transactionsAPI.verifyPayment({
+              razorpayOrderId: response.razorpay_order_id,
+              razorpayPaymentId: response.razorpay_payment_id,
+              razorpaySignature: response.razorpay_signature,
+              transactionId,
             });
-
-            const verifyData = await verifyResponse.json();
-
             if (verifyData.success) {
-              onPaymentSuccess(verifyData.transaction);
+              onPaymentSuccess(verifyData.data);
               onClose();
             } else {
               onPaymentError(verifyData.message || 'Payment verification failed');
@@ -109,23 +117,39 @@ export default function PaymentModal({
           } catch (error) {
             onPaymentError('Payment verification failed');
           }
-        },
-        modal: {
-          ondismiss: () => {
-            setLoading(false);
-          },
-        },
-      };
+        };
+      }
 
-      // For React Native, you would use a different Razorpay integration
-      // This is a placeholder for the web version
-      if (typeof window !== 'undefined' && (window as any).Razorpay) {
+      // Prefer native Razorpay on RN; fallback to web only on web platform
+      if (RazorpayCheckout && typeof RazorpayCheckout.open === 'function') {
+        try {
+          const rnResponse = await RazorpayCheckout.open(options);
+          // RN returns { razorpay_payment_id, razorpay_order_id, razorpay_signature }
+          const verifyData = await transactionsAPI.verifyPayment({
+            razorpayOrderId: rnResponse.razorpay_order_id,
+            razorpayPaymentId: rnResponse.razorpay_payment_id,
+            razorpaySignature: rnResponse.razorpay_signature,
+            transactionId,
+          });
+          if (verifyData.success) {
+            onPaymentSuccess(verifyData.data);
+            onClose();
+          } else {
+            onPaymentError(verifyData.message || 'Payment verification failed');
+          }
+        } catch (e) {
+          setLoading(false);
+          onPaymentError('Payment cancelled or failed');
+        }
+      } else if (Platform.OS === 'web') {
+        if (!(window as any).Razorpay) {
+          const loaded = await loadRazorpayScriptIfNeeded();
+          if (!loaded) throw new Error('Failed to load Razorpay checkout script');
+        }
         const razorpay = new (window as any).Razorpay(options);
         razorpay.open();
       } else {
-        // For React Native, you would use react-native-razorpay
-        Alert.alert('Payment', 'Razorpay integration for React Native would be implemented here');
-        setLoading(false);
+        Alert.alert('Payment', 'Razorpay native SDK not available. Please run a custom dev client (expo prebuild + expo run:android) to use Razorpay on device.');
       }
     } catch (error) {
       setLoading(false);
@@ -158,12 +182,17 @@ export default function PaymentModal({
             
             <View style={styles.featuresContainer}>
               <ThemedText style={styles.featuresTitle}>Features included:</ThemedText>
-              {plan.features.map((feature, index) => (
-                <View key={index} style={styles.featureItem}>
-                  <FontAwesome name="check" size={14} color="#4CAF50" />
-                  <ThemedText style={styles.featureText}>{feature}</ThemedText>
-                </View>
-              ))}
+              {plan.features.map((feature, index) => {
+                const text = typeof feature === 'string' 
+                  ? feature 
+                  : (feature.name || feature.description || 'Feature');
+                return (
+                  <View key={index} style={styles.featureItem}>
+                    <FontAwesome name="check" size={14} color="#4CAF50" />
+                    <ThemedText style={styles.featureText}>{text}</ThemedText>
+                  </View>
+                );
+              })}
             </View>
           </View>
 
@@ -185,17 +214,9 @@ export default function PaymentModal({
           </View>
 
           <View style={styles.totalContainer}>
-            <View style={styles.totalRow}>
-              <ThemedText style={styles.totalLabel}>Plan Price:</ThemedText>
-              <ThemedText style={styles.totalValue}>₹{plan.price}</ThemedText>
-            </View>
-            <View style={styles.totalRow}>
-              <ThemedText style={styles.totalLabel}>GST (18%):</ThemedText>
-              <ThemedText style={styles.totalValue}>₹{(plan.price * 0.18).toFixed(2)}</ThemedText>
-            </View>
             <View style={[styles.totalRow, styles.finalTotal]}>
-              <ThemedText style={styles.finalTotalLabel}>Total Amount:</ThemedText>
-              <ThemedText style={styles.finalTotalValue}>₹{(plan.price * 1.18).toFixed(2)}</ThemedText>
+              <ThemedText style={styles.finalTotalLabel}>Amount Payable:</ThemedText>
+              <ThemedText style={styles.finalTotalValue}>₹{plan.price}</ThemedText>
             </View>
           </View>
 
@@ -209,9 +230,7 @@ export default function PaymentModal({
             ) : (
               <>
                 <FontAwesome name="credit-card" size={16} color="#FFFFFF" />
-                <ThemedText style={styles.payButtonText}>
-                  Pay ₹{(plan.price * 1.18).toFixed(2)}
-                </ThemedText>
+                <ThemedText style={styles.payButtonText}>Pay ₹{plan.price}</ThemedText>
               </>
             )}
           </TouchableOpacity>

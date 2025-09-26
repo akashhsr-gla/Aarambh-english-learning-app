@@ -11,33 +11,51 @@ class FeatureService {
   // Load all features for current user
   async loadFeatures() {
     try {
+      console.log('🔄 Loading features from backend...');
+      console.log('🔑 Current API base URL:', 'http://localhost:5000/api');
+      
       const response = await apiRequest('/features/user');
+      console.log('📡 Features API response:', response);
+      
       if (response.success) {
         this.features = response.data.features;
         this.userPlan = response.data.userPlan;
         this.isLoaded = true;
+
         return true;
       }
+      console.log('❌ Failed to load features - response not successful:', response);
       return false;
     } catch (error) {
-      console.error('Error loading features:', error);
+      console.error('❌ Error loading features:', error);
+      console.error('❌ Error details:', error.response?.data || error.message);
+      console.error('❌ Error status:', error.response?.status);
       return false;
     }
+  }
+
+  // Clear cache and reload features
+  async refreshFeatures() {
+    this.features = [];
+    this.userPlan = null;
+    this.isLoaded = false;
+    return await this.loadFeatures();
   }
 
   // Check if user can access a specific feature
   canAccess(featureKey) {
     if (!this.isLoaded) {
-      console.warn('Features not loaded yet');
+  
       return false;
     }
 
     const feature = this.features.find(f => f.key === featureKey);
     if (!feature) {
-      console.warn(`Feature ${featureKey} not found`);
+      
       return false;
     }
 
+   
     return feature.canAccess;
   }
 

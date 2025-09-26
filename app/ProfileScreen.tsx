@@ -3,14 +3,16 @@ import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    ScrollView,
-    StyleSheet,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
+// Work around TS JSX typing mismatch for expo-linear-gradient in some setups
+const Gradient = (LinearGradient as unknown) as React.ComponentType<any>;
 
 import GameHeader from '../components/GameHeader';
 import { ThemedText } from '../components/ThemedText';
@@ -53,10 +55,8 @@ export default function ProfileScreen() {
   // Edit form state
   const [editForm, setEditForm] = useState({
     name: '',
-    phone: '',
-    languageLevel: 'beginner' as 'beginner' | 'intermediate' | 'advanced',
-    subject: '',
-    experience: 0
+    email: '',
+    phone: ''
   });
 
   useEffect(() => {
@@ -74,10 +74,8 @@ export default function ProfileScreen() {
       // Initialize edit form
       setEditForm({
         name: user.name || '',
-        phone: user.phone || '',
-        languageLevel: user.studentInfo?.languageLevel || 'beginner',
-        subject: user.teacherInfo?.subject || '',
-        experience: user.teacherInfo?.experience || 0
+        email: user.email || '',
+        phone: user.phone || ''
       });
     } catch (err: any) {
       console.error('Error loading profile:', err);
@@ -94,24 +92,13 @@ export default function ProfileScreen() {
       setSaving(true);
       setError(null);
 
-      const updateData: any = {
+      const updateData = {
         name: editForm.name,
+        email: editForm.email,
         phone: editForm.phone
       };
 
-      // Add role-specific data
-      if (profile.role === 'student') {
-        updateData.studentInfo = {
-          languageLevel: editForm.languageLevel
-        };
-      } else if (profile.role === 'teacher') {
-        updateData.teacherInfo = {
-          subject: editForm.subject,
-          experience: editForm.experience
-        };
-      }
-
-      await authAPI.updateProfile(updateData);
+      await authAPI.updateProfile(profile._id, updateData);
       
       // Reload profile to get updated data
       await loadProfile();
@@ -153,7 +140,7 @@ export default function ProfileScreen() {
   if (loading) {
     return (
       <View style={styles.container}>
-        <LinearGradient
+        <Gradient
           colors={['rgba(220, 41, 41, 0.2)', 'rgba(255, 255, 255, 1)', 'rgba(255, 255, 255, 1)', 'rgba(34, 108, 174, 0.1)']}
           locations={[0, 0.25, 0.75, 1]}
           start={{ x: 0, y: 0 }}
@@ -172,7 +159,7 @@ export default function ProfileScreen() {
   if (error && !profile) {
     return (
       <View style={styles.container}>
-        <LinearGradient
+        <Gradient
           colors={['rgba(220, 41, 41, 0.2)', 'rgba(255, 255, 255, 1)', 'rgba(255, 255, 255, 1)', 'rgba(34, 108, 174, 0.1)']}
           locations={[0, 0.25, 0.75, 1]}
           start={{ x: 0, y: 0 }}
@@ -194,7 +181,7 @@ export default function ProfileScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient
+      <Gradient
         colors={['rgba(220, 41, 41, 0.2)', 'rgba(255, 255, 255, 1)', 'rgba(255, 255, 255, 1)', 'rgba(34, 108, 174, 0.1)']}
         locations={[0, 0.25, 0.75, 1]}
         start={{ x: 0, y: 0 }}
@@ -263,6 +250,19 @@ export default function ProfileScreen() {
               </View>
 
               <View style={styles.inputGroup}>
+                <ThemedText style={styles.inputLabel}>Email Address</ThemedText>
+                <TextInput
+                  style={styles.textInput}
+                  value={editForm.email}
+                  onChangeText={(text) => setEditForm({ ...editForm, email: text })}
+                  placeholder="Enter your email address"
+                  placeholderTextColor="#999999"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
                 <ThemedText style={styles.inputLabel}>Phone Number</ThemedText>
                 <TextInput
                   style={styles.textInput}
@@ -274,58 +274,6 @@ export default function ProfileScreen() {
                 />
               </View>
 
-              {profile?.role === 'student' && (
-                <View style={styles.inputGroup}>
-                  <ThemedText style={styles.inputLabel}>Language Level</ThemedText>
-                  <View style={styles.levelButtons}>
-                    {['beginner', 'intermediate', 'advanced'].map((level) => (
-                      <TouchableOpacity
-                        key={level}
-                        style={[
-                          styles.levelButton,
-                          editForm.languageLevel === level && styles.activeLevelButton
-                        ]}
-                        onPress={() => setEditForm({ ...editForm, languageLevel: level as any })}
-                      >
-                        <ThemedText style={[
-                          styles.levelButtonText,
-                          editForm.languageLevel === level && styles.activeLevelButtonText
-                        ]}>
-                          {level.charAt(0).toUpperCase() + level.slice(1)}
-                        </ThemedText>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-              )}
-
-              {profile?.role === 'teacher' && (
-                <>
-                  <View style={styles.inputGroup}>
-                    <ThemedText style={styles.inputLabel}>Subject</ThemedText>
-                    <TextInput
-                      style={styles.textInput}
-                      value={editForm.subject}
-                      onChangeText={(text) => setEditForm({ ...editForm, subject: text })}
-                      placeholder="Enter your teaching subject"
-                      placeholderTextColor="#999999"
-                    />
-                  </View>
-
-                  <View style={styles.inputGroup}>
-                    <ThemedText style={styles.inputLabel}>Experience (Years)</ThemedText>
-                    <TextInput
-                      style={styles.textInput}
-                      value={editForm.experience.toString()}
-                      onChangeText={(text) => setEditForm({ ...editForm, experience: parseInt(text) || 0 })}
-                      placeholder="Years of experience"
-                      placeholderTextColor="#999999"
-                      keyboardType="numeric"
-                    />
-                  </View>
-                </>
-              )}
-
               <View style={styles.editActions}>
                 <TouchableOpacity 
                   style={styles.cancelButton}
@@ -334,10 +282,8 @@ export default function ProfileScreen() {
                     // Reset form
                     setEditForm({
                       name: profile?.name || '',
-                      phone: profile?.phone || '',
-                      languageLevel: profile?.studentInfo?.languageLevel || 'beginner',
-                      subject: profile?.teacherInfo?.subject || '',
-                      experience: profile?.teacherInfo?.experience || 0
+                      email: profile?.email || '',
+                      phone: profile?.phone || ''
                     });
                   }}
                 >
@@ -375,21 +321,10 @@ export default function ProfileScreen() {
               </View>
 
               {profile?.role === 'student' && (
-                <>
-                                <View style={styles.infoItem}>
-                <ThemedText style={styles.infoLabel}>Language Level</ThemedText>
-                <ThemedText style={styles.infoValue}>
-                  {profile.studentInfo?.languageLevel ? 
-                   (profile.studentInfo.languageLevel.charAt(0).toUpperCase() + 
-                    profile.studentInfo.languageLevel.slice(1)) : 'Not set'}
-                </ThemedText>
-              </View>
-
-                  <View style={styles.infoItem}>
-                    <ThemedText style={styles.infoLabel}>Subscription</ThemedText>
-                    <ThemedText style={styles.infoValue}>{getSubscriptionStatus()}</ThemedText>
-                  </View>
-                </>
+                <View style={styles.infoItem}>
+                  <ThemedText style={styles.infoLabel}>Subscription</ThemedText>
+                  <ThemedText style={styles.infoValue}>{getSubscriptionStatus()}</ThemedText>
+                </View>
               )}
 
               {profile?.role === 'teacher' && (
@@ -650,31 +585,6 @@ const styles = StyleSheet.create({
     color: '#333333',
     borderWidth: 1.5,
     borderColor: '#E8E8E8',
-  },
-  levelButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  levelButton: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-    borderRadius: 8,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderWidth: 1.5,
-    borderColor: '#E8E8E8',
-  },
-  activeLevelButton: {
-    backgroundColor: '#dc2929',
-    borderColor: '#dc2929',
-  },
-  levelButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#666666',
-  },
-  activeLevelButtonText: {
-    color: '#FFFFFF',
   },
   editActions: {
     flexDirection: 'row',

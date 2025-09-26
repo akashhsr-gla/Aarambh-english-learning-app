@@ -1,13 +1,12 @@
 import { FontAwesome } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { CommonActions, useNavigation, useRoute } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Dimensions,
-  KeyboardAvoidingView,
-  Platform,
+  KeyboardAvoidingView, Modal, Platform,
   ScrollView,
   StyleSheet,
   TextInput,
@@ -20,7 +19,7 @@ import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
 import FeatureAccessWrapper from './components/FeatureAccessWrapper';
 import { useFeatureAccess } from './hooks/useFeatureAccess';
-import { groupsAPI } from './services/api';
+import { authAPI, groupsAPI } from './services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -66,13 +65,19 @@ export default function GroupChatScreen() {
   const route = useRoute();
   const { groupInfo, participants: routeParticipants, groupId } = (route.params as RouteParams) || {};
   
+  
   const [participants, setParticipants] = useState<Participant[]>(routeParticipants || []);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
+  const [isHost, setIsHost] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [showEndModal, setShowEndModal] = useState(false);
+  const [endedByName, setEndedByName] = useState<string | null>(null);
+  const groupDetailsPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  
   // Feature access control
   const { canAccess: canAccessGroupChat, featureInfo: groupFeatureInfo } = useFeatureAccess('group_calls');
   const [showParticipants, setShowParticipants] = useState(false);
@@ -87,7 +92,7 @@ export default function GroupChatScreen() {
       const response = await groupsAPI.getMessages(groupId, 1, 100);
       
       if (response.success) {
-        const formattedMessages: Message[] = response.data.messages.map((msg: any) => ({
+        const formattedMessages: Message[] = (response.data.messages || []).map((msg: any) => ({
           id: msg.id,
           sender: {
             id: msg.sender.id,
@@ -116,17 +121,33 @@ export default function GroupChatScreen() {
     try {
       const response = await groupsAPI.getGroupDetails(groupId);
       if (response.success) {
-        const groupParticipants: Participant[] = response.data.participants.map((p: any) => ({
-          id: p.user._id || p.user,
-          name: p.user.name || 'Unknown',
-          avatar: p.user.profilePicture || null,
+        const groupParticipants: Participant[] = (response.data.participants || []).map((p: any) => ({
+          id: p.id || p.user?._id || p.user,
+          name: p.name || p.user?.name || 'Unknown',
+          avatar: p.profilePicture || p.user?.profilePicture || null,
           isHost: p.role === 'host',
           isActive: p.isActive
         }));
         setParticipants(groupParticipants);
+        
+        // Check if current user is the host
+        try {
+          const authResponse = await authAPI.getCurrentUser();
+          if (authResponse.success) {
+            const userId = authResponse.data?.user?._id || authResponse.data?._id || authResponse._id;
+            setCurrentUserId(userId);
+            
+            if (userId) {
+              const userIsHost = groupParticipants.some(p => p.id === userId && p.isHost);
+              setIsHost(userIsHost);
+            }
+          }
+        } catch (err) {
+          // Silent error handling
+        }
       }
     } catch (err: any) {
-      console.error('Error loading participants:', err);
+      // Silent error handling
     }
   };
 
@@ -137,7 +158,57 @@ export default function GroupChatScreen() {
       
       // Set up polling for new messages
       const interval = setInterval(loadMessages, 3000);
-      return () => clearInterval(interval);
+      
+      // Set up polling for group details to detect end-session and keep participants in sync
+      const pollGroupDetails = async () => {
+        try {
+          const resp = await groupsAPI.getGroupDetails(groupId);
+          if (resp?.success && resp.data) {
+            // Update participants live
+            const liveParticipants: Participant[] = (resp.data.participants || []).map((p: any) => ({
+              id: p.id || p.user?._id || p.user,
+              name: p.name || p.user?.name || 'Unknown',
+              avatar: p.profilePicture || p.user?.profilePicture || null,
+              isHost: p.role === 'host',
+              isActive: p.isActive
+            }));
+            setParticipants(liveParticipants);
+
+            // Detect session end - show modal to ALL participants when session ends
+            const status = resp.data.status;
+            const isActiveSession = resp.data.groupSession?.isActive;
+            
+            // Session has ended if status is not active OR session is not active
+            const sessionEnded = (status && !['active', 'waiting'].includes(status)) || isActiveSession === false;
+            
+            if (sessionEnded) {
+              const hostName = resp.data.host?.name || 'Host';
+              setEndedByName(hostName);
+              setShowEndModal(true);
+              // Stop polling once we detect session end
+              if (groupDetailsPollRef.current) {
+                clearInterval(groupDetailsPollRef.current);
+                groupDetailsPollRef.current = null;
+              }
+            }
+          }
+        } catch (error) {
+          // Silent error handling
+        }
+      };
+
+      groupDetailsPollRef.current = setInterval(pollGroupDetails, 2000);
+      
+      // Initial poll once
+      pollGroupDetails();
+      
+    return () => {
+        clearInterval(interval);
+        if (groupDetailsPollRef.current) {
+          clearInterval(groupDetailsPollRef.current);
+          groupDetailsPollRef.current = null;
+        }
+      };
     }
   }, [groupId]);
 
@@ -164,7 +235,6 @@ export default function GroupChatScreen() {
         Alert.alert('Error', 'Failed to send message');
       }
     } catch (error: any) {
-      console.error('Error sending message:', error);
       Alert.alert('Error', error.message || 'Failed to send message');
     } finally {
       setSending(false);
@@ -192,6 +262,71 @@ export default function GroupChatScreen() {
       ]
     );
   };
+
+  const handleLeaveGroup = async () => {
+    Alert.alert(
+      'Leave Group',
+      'Are you sure you want to leave this group?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Leave', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (!groupId) {
+                Alert.alert('Error', 'Group ID is missing');
+                return;
+              }
+              const response = await groupsAPI.leaveGroup(groupId);
+              // Optimistically remove current user from participants and close overlay
+              if (currentUserId) {
+                setParticipants(prev => prev.filter(p => p.id !== currentUserId));
+              }
+              setShowParticipants(false);
+              // Reset to groups screen to guarantee navigation
+              // @ts-ignore
+              navigation.dispatch(
+                CommonActions.reset({ index: 0, routes: [{ name: 'GroupDiscussionScreen' }] })
+              );
+            } catch (error) {
+              Alert.alert('Error', 'Failed to leave group. Please try again.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  const handleCloseGroup = async () => {
+    Alert.alert(
+      'Close Group Discussion',
+      'Are you sure you want to close this group discussion? This will end the session for all participants.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Close Group', 
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              if (!groupId) {
+                Alert.alert('Error', 'Group ID is missing');
+                return;
+              }
+              const response = await groupsAPI.endSession(groupId);
+              // For host, directly navigate back - others will get modal via polling
+              // @ts-ignore
+              navigation.dispatch(
+                CommonActions.reset({ index: 0, routes: [{ name: 'GroupDiscussionScreen' }] })
+              );
+            } catch (error) {
+              Alert.alert('Error', 'Failed to close group. Please try again.');
+            }
+          }
+        }
+      ]
+    );
+  };
   
   const formatTime = (timestamp: Date) => {
     const now = new Date();
@@ -205,19 +340,19 @@ export default function GroupChatScreen() {
   };
 
   const renderMessage = (message: Message, index: number) => {
-    const isMyMessage = message.sender.id === 'current-user'; // You'd get this from auth context
+    const isMyMessage = currentUserId && message.sender.id === currentUserId;
     const showAvatar = index === 0 || messages[index - 1].sender.id !== message.sender.id;
     
     return (
-      <View key={message.id} style={styles.messageContainer}>
-        {showAvatar && (
-          <View style={[styles.avatar, isMyMessage && styles.myAvatar]}>
+      <View key={message.id} style={[styles.messageContainer, isMyMessage && styles.myMessageContainer]}>
+        {!isMyMessage && showAvatar && (
+          <View style={styles.avatar}>
             <FontAwesome name="user" size={16} color="#FFFFFF" />
           </View>
         )}
         <View style={[styles.messageBubble, isMyMessage && styles.myMessageBubble]}>
-          {showAvatar && (
-            <ThemedText style={[styles.senderName, isMyMessage && styles.mySenderName]}>
+          {!isMyMessage && showAvatar && (
+            <ThemedText style={styles.senderName}>
               {message.sender.name}
             </ThemedText>
           )}
@@ -228,6 +363,7 @@ export default function GroupChatScreen() {
             {formatTime(message.timestamp)}
           </ThemedText>
         </View>
+        
       </View>
     );
   };
@@ -328,21 +464,28 @@ export default function GroupChatScreen() {
           </View>
       </View>
       
-        {/* Communication Options */}
-        <View style={styles.communicationOptions}>
-          <TouchableOpacity 
-            style={styles.communicationButton}
-            onPress={() => handleUpgradeToCall('voice')}
-          >
-            <FontAwesome name="phone" size={16} color="#FFFFFF" />
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.communicationButton, styles.videoButton]}
-            onPress={() => handleUpgradeToCall('video')}
-          >
-            <FontAwesome name="video-camera" size={16} color="#FFFFFF" />
-          </TouchableOpacity>
+        
+        <View style={styles.actionButtons}>
+          {isHost ? (
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.closeButton]}
+              onPress={handleCloseGroup}
+            >
+              <FontAwesome name="times-circle" size={16} color="#FFFFFF" />
+              <ThemedText style={styles.actionButtonText}>Close Group</ThemedText>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity 
+              style={[styles.actionButton, styles.leaveButton]}
+              onPress={handleLeaveGroup}
+            >
+              <FontAwesome name="sign-out" size={16} color="#FFFFFF" />
+              <ThemedText style={styles.actionButtonText}>Leave Group</ThemedText>
+            </TouchableOpacity>
+          )}
         </View>
+        
+        
       </ThemedView>
 
       {/* Messages */}
@@ -422,6 +565,31 @@ export default function GroupChatScreen() {
           </ScrollView>
         </View>
       )}
+
+      {/* Session Ended Modal */}
+      <Modal visible={showEndModal} transparent animationType="fade" presentationStyle="overFullScreen" onRequestClose={() => {}}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContainer, { backgroundColor: '#ffffff' }]}>
+            <FontAwesome name="info-circle" size={40} color="#dc2929" />
+            <ThemedText style={[styles.modalTitle, { color: '#1a5085' }]}>Group Discussion Ended</ThemedText>
+            <ThemedText style={[styles.modalMessage, { color: '#333' }]}>
+              {endedByName} has closed the group discussion.
+            </ThemedText>
+            <TouchableOpacity 
+              style={[styles.modalButton, { backgroundColor: '#226cae' }]}
+              onPress={() => {
+                setShowEndModal(false);
+                // @ts-ignore
+                navigation.dispatch(
+                  CommonActions.reset({ index: 0, routes: [{ name: 'GroupDiscussionScreen' }] })
+                );
+              }}
+            >
+              <ThemedText style={{ color: '#fff', fontWeight: '600' }}>OK</ThemedText>
+            </TouchableOpacity>
+            </View>
+        </View>
+      </Modal>
       </FeatureAccessWrapper>
     </View>
   );
@@ -491,10 +659,15 @@ const styles = StyleSheet.create({
   participantsButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: '#226cae',
     borderRadius: 20,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
+    shadowColor: '#226cae',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
   },
   participantsCount: {
     fontSize: 14,
@@ -609,8 +782,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 8,
   },
+  myMessageContainer: {
+    flexDirection: 'row-reverse',
+    justifyContent: 'flex-start',
+  },
   myAvatar: {
-    backgroundColor: '#226cae',
+    backgroundColor: '#dc2929',
+    marginLeft: 8,
   },
   messageBubble: {
     maxWidth: width * 0.7,
@@ -622,6 +800,7 @@ const styles = StyleSheet.create({
   myMessageBubble: {
     backgroundColor: '#dc2929',
     alignSelf: 'flex-end',
+    marginRight: 8,
   },
   senderName: {
     fontSize: 12,
@@ -744,5 +923,81 @@ const styles = StyleSheet.create({
   },
   activeStatus: {
     backgroundColor: '#4CAF50',
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 8,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginHorizontal: 4,
+  },
+  closeButton: {
+    backgroundColor: '#dc2929',
+  },
+  leaveButton: {
+    backgroundColor: '#666666',
+  },
+  actionButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  // Modal styles (matching CallScreen/ChatScreen style)
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 24,
+    width: '80%',
+    maxWidth: 350,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 8,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#333333',
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 15,
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  modalButton: {
+    backgroundColor: '#226cae',
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    minWidth: 120,
+    alignItems: 'center',
+  },
+  modalPrimaryButton: {
+    backgroundColor: '#226cae',
+  },
+  modalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 }); 

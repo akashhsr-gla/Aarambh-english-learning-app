@@ -54,10 +54,16 @@ export default function CreateGroupScreen() {
       const groupData = {
         title: title.trim(),
         topic: topic.trim(),
+        description: '', // Optional description
         maxParticipants: participants,
         level,
         isPrivate,
-        password: isPrivate ? password.trim() : undefined
+        password: isPrivate ? password.trim() : undefined,
+        settings: {
+          allowVideo: true,
+          allowVoice: true,
+          allowChat: true
+        }
       };
       
       const response = await groupsAPI.createGroup(groupData);

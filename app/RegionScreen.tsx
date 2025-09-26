@@ -38,7 +38,7 @@ export default function RegionScreen() {
   useEffect(() => {
     fetchRegions();
   }, []);
-
+  
   // Animation for dropdown
   useEffect(() => {
     Animated.timing(dropdownHeight, {
@@ -133,7 +133,7 @@ export default function RegionScreen() {
             Setting your region helps us provide content relevant to your area
           </ThemedText>
         </ThemedView>
-
+        
         {/* Loading State */}
         {loading && (
           <ThemedView style={styles.loadingContainer}>
@@ -155,24 +155,24 @@ export default function RegionScreen() {
         
         {/* Region Selection */}
         {!loading && !error && (
-          <ThemedView style={styles.selectionContainer}>
+        <ThemedView style={styles.selectionContainer}>
             <ThemedText style={styles.sectionLabel}>Region</ThemedText>
-            
-            <TouchableOpacity 
-              style={styles.dropdownToggle}
+          
+          <TouchableOpacity 
+            style={styles.dropdownToggle}
               onPress={toggleDropdown}
-              activeOpacity={0.8}
-            >
-              <ThemedText style={styles.selectedText}>
+            activeOpacity={0.8}
+          >
+            <ThemedText style={styles.selectedText}>
                 {selectedRegion ? selectedRegion.name : 'Select your region'}
-              </ThemedText>
+            </ThemedText>
               <FontAwesome 
                 name={isDropdownOpen ? 'chevron-up' : 'chevron-down'} 
                 size={16} 
                 color="#666666" 
               />
-            </TouchableOpacity>
-            
+          </TouchableOpacity>
+          
             <Animated.View style={[styles.dropdownContainer, { height: dropdownHeight }]}>
               <ScrollView showsVerticalScrollIndicator={true} style={styles.dropdownList}>
                 {regions.map((item) => (
@@ -185,9 +185,9 @@ export default function RegionScreen() {
                     onPress={() => selectRegion(item)}
                   >
                     <View style={styles.dropdownItemContent}>
-                      <ThemedText 
-                        style={[
-                          styles.dropdownItemText,
+                    <ThemedText 
+                      style={[
+                        styles.dropdownItemText,
                           selectedRegion?._id === item._id && styles.selectedDropdownItemText
                         ]}
                       >
@@ -196,7 +196,7 @@ export default function RegionScreen() {
                       {item.description && (
                         <ThemedText style={styles.dropdownItemDescription}>
                           {item.description}
-                        </ThemedText>
+                    </ThemedText>
                       )}
                     </View>
                     {selectedRegion?._id === item._id && (
@@ -205,19 +205,19 @@ export default function RegionScreen() {
                   </TouchableOpacity>
                 ))}
               </ScrollView>
-            </Animated.View>
-          </ThemedView>
+          </Animated.View>
+        </ThemedView>
         )}
         
         {/* Map Preview */}
         {!loading && !error && (
-          <ThemedView style={styles.mapPreview}>
-            <FontAwesome name="map" size={60} color="#226cae" />
-            <ThemedText style={styles.mapPlaceholderText}>
+        <ThemedView style={styles.mapPreview}>
+          <FontAwesome name="map" size={60} color="#226cae" />
+          <ThemedText style={styles.mapPlaceholderText}>
               {selectedRegion 
                 ? `${selectedRegion.name} - ${selectedRegion.code}`
                 : 'Region preview will appear here'}
-            </ThemedText>
+          </ThemedText>
             {selectedRegion && selectedRegion.totalUsers && (
               <View style={styles.regionStats}>
                 <View style={styles.statItem}>
@@ -232,21 +232,21 @@ export default function RegionScreen() {
                 )}
               </View>
             )}
-          </ThemedView>
+        </ThemedView>
         )}
         
         {/* Save Button */}
         {!loading && !error && (
-          <TouchableOpacity 
-            style={[
-              styles.saveButton,
+        <TouchableOpacity 
+          style={[
+            styles.saveButton,
               !selectedRegion && styles.disabledButton
-            ]}
-            onPress={handleSaveRegion}
+          ]}
+          onPress={handleSaveRegion}
             disabled={!selectedRegion}
-          >
-            <ThemedText style={styles.saveButtonText}>Save Region</ThemedText>
-          </TouchableOpacity>
+        >
+          <ThemedText style={styles.saveButtonText}>Save Region</ThemedText>
+        </TouchableOpacity>
         )}
       </ScrollView>
     </View>

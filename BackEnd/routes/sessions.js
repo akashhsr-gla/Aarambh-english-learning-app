@@ -7,8 +7,8 @@ const { authenticateToken, requireAdmin } = require('../middleware/auth');
 
 // Validation middleware
 const validateSessionQuery = [
-  body('sessionType').optional().isIn(['video_call', 'voice_call', 'chat', 'group_video_call', 'group_voice_call', 'group_chat', 'game']).withMessage('Invalid session type'),
-  body('status').optional().isIn(['active', 'completed', 'cancelled']).withMessage('Invalid session status'),
+  body('sessionType').optional().isIn(['video_call', 'voice_call', 'chat', 'group_video_call', 'group_voice_call', 'group_chat', 'group_discussion', 'game']).withMessage('Invalid session type'),
+  body('status').optional().isIn(['active', 'completed', 'cancelled', 'paused', 'in_progress']).withMessage('Invalid session status'),
   body('startDate').optional().isISO8601().withMessage('Invalid start date format'),
   body('endDate').optional().isISO8601().withMessage('Invalid end date format')
 ];
@@ -508,6 +508,416 @@ router.post('/admin/search', authenticateToken, requireAdmin, validateSessionQue
 
   } catch (error) {
     console.error('Search sessions error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// 7. CREATE OR UPDATE GAME SESSION
+router.post('/games/create-or-update', authenticateToken, async (req, res) => {
+  try {
+    const { 
+      gameId, 
+      gameType, 
+      difficulty, 
+      currentQuestionIndex, 
+      timeLeft, 
+      answers, 
+      score,
+      totalQuestions
+    } = req.body;
+
+    if (!gameId || !gameType) {
+      return res.status(400).json({
+        success: false,
+        message: 'Game ID and game type are required'
+      });
+    }
+
+    // Check if user has an active game session
+    // Handle both ObjectId and string gameIds
+    const gameQuery = {
+      host: req.user._id,
+      sessionType: 'game',
+      status: { $in: ['active', 'scheduled'] }
+    };
+    
+    // If gameId is a valid ObjectId, use it directly, otherwise use string comparison
+    if (gameId.match(/^[0-9a-fA-F]{24}$/)) {
+      gameQuery['gameSession.game'] = gameId;
+    } else {
+      gameQuery['gameSession.gameId'] = gameId; // Store as string for non-ObjectId gameIds
+    }
+    
+    let session = await Session.findOne(gameQuery);
+
+    if (session) {
+      // Update existing session
+      session.updateGameProgress(currentQuestionIndex, timeLeft, answers);
+      if (score !== undefined) {
+        session.gameSession.scores = session.gameSession.scores || [];
+        // Update current user's score if exists, otherwise add new
+        const existingScoreIndex = session.gameSession.scores.findIndex(s => 
+          s.user.toString() === req.user._id.toString()
+        );
+        if (existingScoreIndex >= 0) {
+          session.gameSession.scores[existingScoreIndex].score = score;
+        }
+      }
+    } else {
+      // Create new session
+      console.log('Creating new game session with data:', {
+        gameId,
+        gameType,
+        difficulty,
+        currentQuestionIndex,
+        score,
+        totalQuestions
+      });
+      
+      session = new Session({
+        sessionId: `game_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        sessionType: 'game',
+        title: `Playing ${gameType} Game`,
+        host: req.user._id,
+        participants: [{
+          user: req.user._id,
+          role: 'player',
+          joinedAt: new Date()
+        }],
+        gameSession: {
+          game: gameId.match(/^[0-9a-fA-F]{24}$/) ? gameId : null,
+          gameId: gameId.match(/^[0-9a-fA-F]{24}$/) ? null : gameId,
+          gameType,
+          difficulty,
+          totalQuestions,
+          currentQuestionIndex: currentQuestionIndex || 0,
+          timeLeft: timeLeft || 0,
+          answers: answers || [],
+          gameStatus: 'in_progress',
+          startTime: new Date()
+        }
+      });
+      
+      console.log('Session created, calling startSession...');
+      session.startSession();
+      console.log('Session started successfully');
+    }
+
+    console.log('Saving session to database...');
+    await session.save();
+    console.log('Session saved successfully with ID:', session._id);
+
+    res.json({
+      success: true,
+      message: 'Game session saved successfully',
+      data: {
+        sessionId: session._id,
+        gameSession: session.gameSession
+      }
+    });
+
+  } catch (error) {
+    console.error('Create/update game session error:', error);
+    console.error('Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+});
+
+// 8. GET ACTIVE GAME SESSION
+router.get('/games/active', authenticateToken, async (req, res) => {
+  try {
+    const session = await Session.findOne({
+      host: req.user._id,
+      sessionType: 'game',
+      status: { $in: ['active', 'scheduled'] },
+      'gameSession.gameStatus': { $in: ['in_progress', 'paused'] }
+    })
+    .populate('gameSession.game', 'title gameType difficulty questions')
+    .sort({ createdAt: -1 });
+
+    if (!session) {
+      return res.json({
+        success: true,
+        message: 'No active game session found',
+        data: null
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Active game session retrieved',
+      data: {
+        sessionId: session._id,
+        gameSession: session.gameSession,
+        status: session.status,
+        startedAt: session.startedAt
+      }
+    });
+
+  } catch (error) {
+    console.error('Get active game session error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// 9. PAUSE GAME SESSION
+router.post('/games/:sessionId/pause', authenticateToken, async (req, res) => {
+  try {
+    const session = await Session.findOne({
+      _id: req.params.sessionId,
+      host: req.user._id,
+      sessionType: 'game'
+    });
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: 'Game session not found'
+      });
+    }
+
+    session.pauseGame();
+    await session.save();
+
+    res.json({
+      success: true,
+      message: 'Game session paused successfully'
+    });
+
+  } catch (error) {
+    console.error('Pause game session error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// 10. RESUME GAME SESSION
+router.post('/games/:sessionId/resume', authenticateToken, async (req, res) => {
+  try {
+    const session = await Session.findOne({
+      _id: req.params.sessionId,
+      host: req.user._id,
+      sessionType: 'game'
+    });
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: 'Game session not found'
+      });
+    }
+
+    session.resumeGame();
+    await session.save();
+
+    res.json({
+      success: true,
+      message: 'Game session resumed successfully'
+    });
+
+  } catch (error) {
+    console.error('Resume game session error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// 11. CREATE OR UPDATE GROUP DISCUSSION SESSION
+router.post('/groups/create-or-update', authenticateToken, async (req, res) => {
+  try {
+    const { 
+      groupId, 
+      groupName, 
+      topic, 
+      level, 
+      discussionType,
+      maxParticipants,
+      isPrivate,
+      joinCode
+    } = req.body;
+
+    if (!groupId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Group ID is required'
+      });
+    }
+
+    // Check if user has an active group discussion session
+    let session = await Session.findOne({
+      host: req.user._id,
+      sessionType: 'group_discussion',
+      'groupSession.groupId': groupId,
+      status: { $in: ['active', 'scheduled'] }
+    });
+
+    if (session) {
+      // Update existing session
+      if (discussionType) session.groupSession.discussionType = discussionType;
+      if (maxParticipants) session.groupSession.maxParticipants = maxParticipants;
+    } else {
+      // Create new session
+      session = new Session({
+        sessionId: `group_discussion_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        sessionType: 'group_discussion',
+        title: groupName || 'Group Discussion',
+        description: topic || 'Group discussion session',
+        host: req.user._id,
+        participants: [{
+          user: req.user._id,
+          role: 'host',
+          joinedAt: new Date()
+        }],
+        groupSession: {
+          groupId,
+          groupName,
+          topic,
+          level: level || 'beginner',
+          discussionType: discussionType || 'chat',
+          maxParticipants: maxParticipants || 10,
+          currentParticipants: 1,
+          isPrivate: isPrivate || false,
+          joinCode: joinCode
+        }
+      });
+      
+      session.startSession();
+    }
+
+    await session.save();
+
+    res.json({
+      success: true,
+      message: 'Group discussion session saved successfully',
+      data: {
+        sessionId: session._id,
+        groupSession: session.groupSession
+      }
+    });
+
+  } catch (error) {
+    console.error('Create/update group discussion session error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// 12. GET ACTIVE GROUP DISCUSSION SESSION
+router.get('/groups/active', authenticateToken, async (req, res) => {
+  try {
+    const session = await Session.findOne({
+      $or: [
+        { host: req.user._id },
+        { 'participants.user': req.user._id }
+      ],
+      sessionType: 'group_discussion',
+      status: { $in: ['active', 'scheduled'] }
+    })
+    .populate('host', 'name email')
+    .populate('participants.user', 'name email')
+    .populate('groupSession.groupId', 'title topic level participants')
+    .sort({ createdAt: -1 });
+
+    if (!session) {
+      return res.json({
+        success: true,
+        message: 'No active group discussion session found',
+        data: null
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Active group discussion session retrieved',
+      data: {
+        sessionId: session._id,
+        groupSession: session.groupSession,
+        status: session.status,
+        startedAt: session.startedAt,
+        participants: session.participants
+      }
+    });
+
+  } catch (error) {
+    console.error('Get active group discussion session error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// 13. GET USER'S RECENT SESSIONS (ALL TYPES)
+router.get('/recent', authenticateToken, async (req, res) => {
+  try {
+    const { limit = 10, sessionType } = req.query;
+    
+    let query = {
+      $or: [
+        { host: req.user._id },
+        { 'participants.user': req.user._id }
+      ]
+    };
+    
+    if (sessionType) {
+      query.sessionType = sessionType;
+    }
+
+    const sessions = await Session.find(query)
+      .populate('host', 'name email')
+      .populate('participants.user', 'name email')
+      .populate('gameSession.game', 'title gameType')
+      .populate('groupSession.groupId', 'title topic level')
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit));
+
+    const formattedSessions = sessions.map(session => ({
+      _id: session._id,
+      sessionId: session.sessionId,
+      sessionType: session.sessionType,
+      title: session.title,
+      status: session.status,
+      startedAt: session.startedAt,
+      endedAt: session.endedAt,
+      duration: session.duration,
+      gameSession: session.gameSession,
+      groupSession: session.groupSession,
+      participantCount: session.participants.length,
+      isHost: session.host._id.toString() === req.user._id.toString(),
+      createdAt: session.createdAt
+    }));
+
+    res.json({
+      success: true,
+      message: 'Recent sessions retrieved successfully',
+      data: {
+        sessions: formattedSessions,
+        count: formattedSessions.length
+      }
+    });
+
+  } catch (error) {
+    console.error('Get recent sessions error:', error);
     res.status(500).json({
       success: false,
       message: 'Server error'

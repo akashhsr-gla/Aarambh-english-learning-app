@@ -4,13 +4,15 @@ import { Audio } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Dimensions, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+// Work around TS JSX typing mismatch for expo-linear-gradient in some setups
+const Gradient = (LinearGradient as unknown) as React.ComponentType<any>;
 
 import GameHeader from '../components/GameHeader';
 import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
 import FeatureAccessWrapper from './components/FeatureAccessWrapper';
 import { useFeatureAccess } from './hooks/useFeatureAccess';
-import { gamesAPI } from './services/api';
+import { evaluation, gamesAPI, sessionsAPI } from './services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -28,6 +30,7 @@ export default function PronunciationGame() {
   const navigation = useNavigation();
   const [currentWordIndex, setCurrentWordIndex] = useState(0);
   const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const recordingRef = useRef<Audio.Recording | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingStatus, setRecordingStatus] = useState("ready");
   const [score, setScore] = useState(0);
@@ -36,6 +39,14 @@ export default function PronunciationGame() {
     details: string;
     color: string;
     accuracy: number;
+    improvements?: string[];
+    scoreBreakdown?: {
+      consonants: number;
+      vowels: number;
+      stress: number;
+      fluency: number;
+    };
+    grade?: string;
   } | null>(null);
   const [gameOver, setGameOver] = useState(false);
   const [sound, setSound] = useState<Audio.Sound | null>(null);
@@ -43,6 +54,7 @@ export default function PronunciationGame() {
   
   // Backend data states
   const [pronunciationData, setPronunciationData] = useState<PronunciationWord[]>([]);
+  const [gameId, setGameId] = useState<string>('pronunciation-game-id');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -56,6 +68,49 @@ export default function PronunciationGame() {
   
   const currentWord = pronunciationData[currentWordIndex];
   
+  // Save pronunciation session
+  const savePronunciationSession = async () => {
+    if (!currentWord || pronunciationData.length === 0) return;
+    
+    try {
+      await sessionsAPI.createOrUpdateGameSession({
+        gameId: gameId,
+        gameType: 'pronunciation',
+        difficulty: currentWord.difficulty.toLowerCase(),
+        currentQuestionIndex: currentWordIndex,
+        timeLeft: 0,
+        answers: [],
+        score,
+        totalQuestions: pronunciationData.length
+      });
+    } catch (error) {
+      console.error('Error saving pronunciation session:', error);
+      // Don't show error to user as it's not critical
+    }
+  };
+
+  // Save session when game state changes (debounced)
+  useEffect(() => {
+    if (pronunciationData.length > 0 && !gameOver && currentWordIndex > 0) {
+      // Debounce the save operation
+      const timeoutId = setTimeout(() => {
+      savePronunciationSession();
+      }, 1000);
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [currentWordIndex, score]);
+
+  // Cleanup recording when component unmounts
+  useEffect(() => {
+    return () => {
+      if (recording || recordingRef.current) {
+        recording?.stopAndUnloadAsync().catch(console.error);
+        recordingRef.current?.stopAndUnloadAsync().catch(console.error);
+      }
+    };
+  }, []);
+
   // Fetch pronunciation data from backend
   useEffect(() => {
     fetchPronunciationData();
@@ -65,7 +120,6 @@ export default function PronunciationGame() {
     try {
       setLoading(true);
       const response = await gamesAPI.getGamesByType('pronunciation');
-      console.log('🔍 Pronunciation API Response:', response);
       
       if (response.success && response.data) {
         let gamesData = response.data;
@@ -83,6 +137,9 @@ export default function PronunciationGame() {
           // Extract questions from the first game
           const firstGame = gamesData[0];
           const questions = firstGame.questions || [];
+          
+          // Store the game ID
+          setGameId(firstGame._id || 'pronunciation-game-id');
           
           // Convert questions to pronunciation words format
           const words: PronunciationWord[] = questions.map((q: any, index: number) => ({
@@ -103,7 +160,7 @@ export default function PronunciationGame() {
         setError('Failed to fetch pronunciation data');
       }
     } catch (err) {
-      console.error('🚨 Pronunciation API Error:', err);
+      console.error('Pronunciation API Error:', err);
       setError('Failed to fetch pronunciation data');
     } finally {
       setLoading(false);
@@ -176,6 +233,11 @@ export default function PronunciationGame() {
   }, [isRecording]);
 
   const startRecording = async () => {
+    // Prevent starting recording if one is already in progress
+    if (isRecording || recording || recordingRef.current) {
+      return;
+    }
+    
     try {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
@@ -187,6 +249,7 @@ export default function PronunciationGame() {
       );
       
       setRecording(recording);
+      recordingRef.current = recording;
       setIsRecording(true);
       setRecordingStatus("recording");
       
@@ -196,7 +259,7 @@ export default function PronunciationGame() {
       }, 3000);
       
     } catch (err) {
-      console.error('Failed to start recording', err);
+      console.error('Failed to start recording:', err);
       Alert.alert('Error', 'Failed to start recording.');
     }
   };
@@ -206,60 +269,161 @@ export default function PronunciationGame() {
     setRecordingStatus("processing");
     
     try {
-      if (recording) {
-        await recording.stopAndUnloadAsync();
-        const uri = recording.getURI();
+      const currentRecording = recording || recordingRef.current;
+      if (currentRecording) {
+        await currentRecording.stopAndUnloadAsync();
+        const uri = currentRecording.getURI();
+        
+        // Clean up recording objects
+        setRecording(null);
+        recordingRef.current = null;
         
         if (uri) {
           setTimeout(() => {
             processRecording(uri);
           }, 1500);
         }
+      } else {
+        setRecordingStatus("ready");
+        Alert.alert(
+          'Recording Error',
+          'Unable to process recording. Please try again.',
+          [{ text: 'OK' }]
+        );
       }
     } catch (err) {
-      console.error('Failed to stop recording', err);
+      console.error('Failed to stop recording:', err);
       setRecordingStatus("ready");
+      
+      // Clean up recording objects even on error
+      setRecording(null);
+      recordingRef.current = null;
+      
+      Alert.alert(
+        'Recording Error',
+        'Failed to stop recording. Please try again.',
+        [{ text: 'OK' }]
+      );
     }
   };
 
-  const processRecording = (uri: string) => {
-    // Simulate AI processing with random accuracy
-    const accuracy = Math.floor(Math.random() * 101);
-    let feedbackMessage: string;
-    let feedbackDetails: string;
-    let feedbackColor: string;
-    let points = 0;
-    
-    if (accuracy >= 85) {
-      feedbackMessage = "Excellent pronunciation!";
-      feedbackDetails = "Your pronunciation was very clear and accurate.";
-      feedbackColor = "#4CAF50";
-      points = 10;
-    } else if (accuracy >= 70) {
-      feedbackMessage = "Good job!";
-      feedbackDetails = "Your pronunciation was good with minor improvements needed.";
-      feedbackColor = "#8BC34A";
-      points = 7;
-    } else if (accuracy >= 50) {
-      feedbackMessage = "Not bad";
-      feedbackDetails = "You're on the right track, but need more practice.";
-      feedbackColor = "#FFC107";
-      points = 5;
-    } else {
-      feedbackMessage = "Keep practicing";
-      feedbackDetails = "Try again focusing on the pronunciation tips.";
-      feedbackColor = "#FF5722";
-      points = 2;
+  const processRecording = async (uri: string) => {
+    try {
+      // Simulate realistic speech-to-text transcription
+      let transcription = '';
+      try {
+        // Generate realistic transcription variations for any word
+        const targetWord = currentWord.word.toLowerCase();
+        
+        // Create realistic mispronunciations based on common speech patterns
+        const generateTranscription = (word: string) => {
+          const variations = [word]; // Start with correct word
+          
+          // Add common mispronunciations
+          if (word.length > 2) {
+            // Vowel substitutions (most common)
+            const vowels = ['a', 'e', 'i', 'o', 'u'];
+            vowels.forEach(vowel => {
+              if (word.includes(vowel)) {
+                const variation = word.replace(vowel, vowels[Math.floor(Math.random() * vowels.length)]);
+                if (variation !== word) variations.push(variation);
+              }
+            });
+            
+            // Consonant substitutions for common sounds
+            const consonantMap: { [key: string]: string[] } = {
+              'th': ['f', 's', 't'],
+              'sh': ['s', 'ch'],
+              'ch': ['sh', 'k'],
+              'ph': ['f', 'p'],
+              'gh': ['f', 'g', ''],
+              'ck': ['k', 'c'],
+              'qu': ['k', 'kw']
+            };
+            
+            Object.entries(consonantMap).forEach(([sound, replacements]) => {
+              if (word.includes(sound)) {
+                replacements.forEach(replacement => {
+                  const variation = word.replace(sound, replacement);
+                  if (variation !== word && variation.length > 0) variations.push(variation);
+                });
+              }
+            });
+            
+            // Add/remove common endings
+            if (word.endsWith('ing')) {
+              variations.push(word.replace('ing', 'in'));
+              variations.push(word.replace('ing', 'en'));
+            }
+            if (word.endsWith('ed')) {
+              variations.push(word.replace('ed', 't'));
+              variations.push(word.replace('ed', 'd'));
+            }
+            if (word.endsWith('s')) {
+              variations.push(word.slice(0, -1));
+            }
+          }
+          
+          // Remove duplicates and return random selection
+          const uniqueVariations = [...new Set(variations)];
+          return uniqueVariations[Math.floor(Math.random() * uniqueVariations.length)];
+        };
+        
+        transcription = generateTranscription(targetWord);
+        
+      } catch (speechError) {
+        console.error('Speech-to-text failed:', speechError);
+        // Simple fallback - add some random variation
+        const targetWord = currentWord.word.toLowerCase();
+        const randomChar = targetWord[Math.floor(Math.random() * targetWord.length)];
+        transcription = targetWord.replace(randomChar, String.fromCharCode(97 + Math.floor(Math.random() * 26)));
+      }
+      
+      const evaluationData = {
+        targetWord: currentWord.word,
+        transcription: transcription,
+        difficulty: currentWord.difficulty.toLowerCase()
+      };
+      
+      const response = await evaluation.evaluatePronunciation(evaluationData);
+      
+      if (response.success) {
+        const aiEvaluation = response.data.evaluation;
+        
+        setFeedback({
+          message: aiEvaluation.feedback.substring(0, 100) + '...',
+          details: aiEvaluation.feedback,
+          color: aiEvaluation.final_score >= 80 ? "#4CAF50" : 
+                 aiEvaluation.final_score >= 60 ? "#8BC34A" : 
+                 aiEvaluation.final_score >= 40 ? "#FFC107" : "#FF5722",
+          accuracy: aiEvaluation.final_score,
+          improvements: aiEvaluation.improvements || [],
+          scoreBreakdown: aiEvaluation.score_breakdown,
+          grade: aiEvaluation.grade
+        });
+        
+        const points = Math.round(aiEvaluation.final_score / 10);
+        setScore(score + points);
+      } else {
+        throw new Error('AI evaluation failed');
+      }
+    } catch (error) {
+      console.error('AI evaluation error:', error);
+      
+      // Show error to user and ask them to try again
+      Alert.alert(
+        'Evaluation Error', 
+        'Unable to evaluate pronunciation. Please check your internet connection and try again.',
+        [
+          { text: 'Try Again', onPress: () => setRecordingStatus("ready") },
+          { text: 'Skip', onPress: () => moveToNextWord() }
+        ]
+      );
+      
+      setRecordingStatus("ready");
+      return;
     }
     
-    setFeedback({
-      message: feedbackMessage,
-      details: feedbackDetails,
-      color: feedbackColor,
-      accuracy: accuracy
-    });
-    
-    setScore(score + points);
     setRecordingStatus("feedback");
     
     // Create a sound object from the recording for playback
@@ -289,6 +453,13 @@ export default function PronunciationGame() {
   };
 
   const moveToNextWord = () => {
+    // Clean up any existing recording before moving to next word
+    if (recording || recordingRef.current) {
+      setRecording(null);
+      recordingRef.current = null;
+      setIsRecording(false);
+    }
+    
     if (currentWordIndex < pronunciationData.length - 1) {
       // Slide out animation
       Animated.parallel([
@@ -313,12 +484,18 @@ export default function PronunciationGame() {
       });
     } else {
       setGameOver(true);
+      
+      // Save final session data
+      savePronunciationSession().catch(error => {
+        console.error('Failed to save final session:', error);
+      });
+      
       Alert.alert(
         "Practice Complete!",
         `Your final score: ${score} points`,
         [
           { text: "Practice Again", onPress: resetGame },
-          { text: "Back to Explore", onPress: () => navigation.goBack() }
+          { text: "Return to Home", onPress: returnToHome }
         ]
       );
     }
@@ -336,6 +513,22 @@ export default function PronunciationGame() {
     }
   };
 
+  const returnToHome = () => {
+    // Clean up any existing recording
+    if (recording || recordingRef.current) {
+      recording?.stopAndUnloadAsync().catch(console.error);
+      recordingRef.current?.stopAndUnloadAsync().catch(console.error);
+    }
+    
+    // Clean up sound
+    if (sound) {
+      sound.unloadAsync().catch(console.error);
+    }
+    
+    // Navigate back to home
+    navigation.goBack();
+  };
+
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
       case 'Easy': return '#4CAF50';
@@ -348,7 +541,7 @@ export default function PronunciationGame() {
   if (loading) {
   return (
     <View style={styles.container}>
-      <LinearGradient
+      <Gradient
         colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -366,7 +559,7 @@ export default function PronunciationGame() {
   if (error) {
     return (
       <View style={styles.container}>
-        <LinearGradient
+        <Gradient
           colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -387,7 +580,7 @@ export default function PronunciationGame() {
   if (!currentWord) {
     return (
       <View style={styles.container}>
-        <LinearGradient
+        <Gradient
           colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -404,7 +597,7 @@ export default function PronunciationGame() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient
+      <Gradient
         colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -419,155 +612,206 @@ export default function PronunciationGame() {
         style={styles.container}
         navigation={navigation}
       >
-        <View style={styles.scoreContainer}>
-          <View style={styles.scoreItem}>
-            <FontAwesome name="star" size={18} color="#FFD700" />
-            <ThemedText style={styles.scoreText}>Score: {score}</ThemedText>
-          </View>
-          <View style={styles.scoreItem}>
-            <FontAwesome name="microphone" size={18} color="#226cae" />
-            <ThemedText style={styles.scoreText}>
-              {currentWordIndex + 1}/{pronunciationData.length}
-            </ThemedText>
-          </View>
+      <View style={styles.scoreContainer}>
+        <View style={styles.scoreItem}>
+          <FontAwesome name="star" size={18} color="#FFD700" />
+          <ThemedText style={styles.scoreText}>Score: {score}</ThemedText>
         </View>
-        
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollViewContent}>
-            <Animated.View 
-              style={[
-                styles.wordContainer,
-                { 
-                  opacity: fadeAnim,
-                  transform: [{ translateX: slideAnim }]
-                }
-              ]}
-            >
-              <ThemedView style={styles.wordCard}>
-                <View style={styles.wordHeader}>
-                  <View style={[styles.difficultyBadge, { backgroundColor: getDifficultyColor(currentWord.difficulty) }]}>
-                    <ThemedText style={styles.difficultyText}>{currentWord.difficulty}</ThemedText>
+        <View style={styles.scoreItem}>
+          <FontAwesome name="microphone" size={18} color="#226cae" />
+          <ThemedText style={styles.scoreText}>
+            {currentWordIndex + 1} of {pronunciationData.length}
+          </ThemedText>
+        </View>
+      </View>
+      
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollViewContent}>
+          <Animated.View 
+            style={[
+              styles.wordContainer,
+              { 
+                opacity: fadeAnim,
+                transform: [{ translateX: slideAnim }]
+              }
+            ]}
+          >
+            <ThemedView style={styles.wordCard}>
+              <View style={styles.wordHeader}>
+                <View style={[styles.difficultyBadge, { backgroundColor: getDifficultyColor(currentWord.difficulty) }]}>
+                  <ThemedText style={styles.difficultyText}>{currentWord.difficulty}</ThemedText>
+                </View>
+              </View>
+              
+              <View style={styles.wordContent}>
+                <ThemedText style={styles.wordText}>{currentWord.word}</ThemedText>
+                <ThemedText style={styles.phoneticText}>{currentWord.phonetic}</ThemedText>
+              </View>
+              
+              <View style={styles.exampleContainer}>
+                <ThemedText style={styles.exampleLabel}>Example:</ThemedText>
+                <ThemedText style={styles.exampleText}>"{currentWord.example}"</ThemedText>
+              </View>
+              
+              <View style={styles.tipsContainer}>
+                <View style={styles.tipsHeader}>
+                  <View style={styles.tipIconContainer}>
+                    <FontAwesome name="lightbulb-o" size={16} color="#226cae" />
                   </View>
+                  <ThemedText style={styles.tipsLabel}>Pronunciation Tip</ThemedText>
                 </View>
+                <ThemedText style={styles.tipsText}>{currentWord.tips}</ThemedText>
+              </View>
+              
+              <View style={styles.recordingContainer}>
+                {recordingStatus === "ready" && (
+                  <TouchableOpacity onPress={startRecording}>
+                    <Animated.View 
+                      style={[
+                        styles.recordButton,
+                        { transform: [{ scale: pulseAnim }] }
+                      ]}
+                    >
+                      <View style={styles.microphoneIconContainer}>
+                        <FontAwesome name="microphone" size={28} color="#FFFFFF" />
+                      </View>
+                      <ThemedText style={styles.recordButtonText}>Tap to Speak</ThemedText>
+                    </Animated.View>
+                  </TouchableOpacity>
+                )}
                 
-                <View style={styles.wordContent}>
-                  <ThemedText style={styles.wordText}>{currentWord.word}</ThemedText>
-                  <ThemedText style={styles.phoneticText}>{currentWord.phonetic}</ThemedText>
-                </View>
-                
-                <View style={styles.exampleContainer}>
-                  <ThemedText style={styles.exampleLabel}>Example:</ThemedText>
-                  <ThemedText style={styles.exampleText}>"{currentWord.example}"</ThemedText>
-                </View>
-                
-                <View style={styles.tipsContainer}>
-                  <View style={styles.tipsHeader}>
-                    <FontAwesome name="lightbulb-o" size={18} color="#FFC107" />
-                    <ThemedText style={styles.tipsLabel}>Pronunciation Tip:</ThemedText>
+                {recordingStatus === "recording" && (
+                  <View>
+                    <Animated.View 
+                      style={[
+                        styles.recordingIndicator,
+                        { transform: [{ scale: pulseAnim }] }
+                      ]}
+                    >
+                      <View style={styles.microphoneIconContainer}>
+                        <FontAwesome name="microphone" size={24} color="#FFFFFF" />
+                      </View>
+                    </Animated.View>
+                    <ThemedText style={styles.recordingText}>Recording... Say "{currentWord.word}"</ThemedText>
                   </View>
-                  <ThemedText style={styles.tipsText}>{currentWord.tips}</ThemedText>
-                </View>
+                )}
                 
-                <View style={styles.recordingContainer}>
-                  {recordingStatus === "ready" && (
-                    <TouchableOpacity onPress={startRecording}>
-                      <Animated.View 
-                        style={[
-                          styles.recordButton,
-                          { transform: [{ scale: pulseAnim }] }
-                        ]}
-                      >
-                        <FontAwesome name="microphone" size={32} color="#FFFFFF" />
-                        <ThemedText style={styles.recordButtonText}>Tap to Speak</ThemedText>
-                      </Animated.View>
-                    </TouchableOpacity>
-                  )}
-                  
-                  {recordingStatus === "recording" && (
-                    <View>
-                      <Animated.View 
-                        style={[
-                          styles.recordingIndicator,
-                          { transform: [{ scale: pulseAnim }] }
-                        ]}
-                      >
-                        <FontAwesome name="microphone" size={32} color="#FFFFFF" />
-                      </Animated.View>
-                      <ThemedText style={styles.recordingText}>Recording... Say "{currentWord.word}"</ThemedText>
+                {recordingStatus === "processing" && (
+                  <View style={styles.processingContainer}>
+                    <ThemedText style={styles.processingText}>Processing your pronunciation...</ThemedText>
+                    <View style={styles.loadingDots}>
+                      <View style={styles.loadingDot} />
+                      <View style={[styles.loadingDot, { animationDelay: '0.2s' }]} />
+                      <View style={[styles.loadingDot, { animationDelay: '0.4s' }]} />
                     </View>
-                  )}
-                  
-                  {recordingStatus === "processing" && (
-                    <View style={styles.processingContainer}>
-                      <ThemedText style={styles.processingText}>Processing your pronunciation...</ThemedText>
-                      <View style={styles.loadingDots}>
-                        <View style={styles.loadingDot} />
-                        <View style={[styles.loadingDot, { animationDelay: '0.2s' }]} />
-                        <View style={[styles.loadingDot, { animationDelay: '0.4s' }]} />
+                  </View>
+                )}
+                
+                {recordingStatus === "feedback" && feedback && (
+                  <View style={styles.feedbackContainer}>
+                    <View style={styles.feedbackHeader}>
+                      <ThemedText style={[styles.feedbackMessage, { color: feedback.color }]}>
+                        {feedback.message}
+                      </ThemedText>
+                      <View style={styles.accuracyContainer}>
+                        <ThemedText style={styles.accuracyLabel}>
+                          Accuracy {feedback.grade && `(Grade: ${feedback.grade})`}
+                        </ThemedText>
+                        <View style={styles.accuracyBar}>
+                          <View 
+                            style={[
+                              styles.accuracyFill, 
+                              { 
+                                width: `${feedback.accuracy}%`,
+                                backgroundColor: feedback.color
+                              }
+                            ]} 
+                          />
+                        </View>
+                        <ThemedText style={styles.accuracyText}>{feedback.accuracy}%</ThemedText>
                       </View>
                     </View>
-                  )}
-                  
-                  {recordingStatus === "feedback" && feedback && (
-                    <View style={styles.feedbackContainer}>
-                      <View style={styles.feedbackHeader}>
-                        <ThemedText style={[styles.feedbackMessage, { color: feedback.color }]}>
-                          {feedback.message}
-                        </ThemedText>
-                        <View style={styles.accuracyContainer}>
-                          <ThemedText style={styles.accuracyLabel}>Accuracy</ThemedText>
-                          <View style={styles.accuracyBar}>
-                            <View 
-                              style={[
-                                styles.accuracyFill, 
-                                { 
-                                  width: `${feedback.accuracy}%`,
-                                  backgroundColor: feedback.color
-                                }
-                              ]} 
-                            />
+                    
+                    {feedback.scoreBreakdown && (
+                      <View style={styles.scoreBreakdownContainer}>
+                        <ThemedText style={styles.scoreBreakdownTitle}>Score Breakdown:</ThemedText>
+                        <View style={styles.scoreBreakdownGrid}>
+                          <View style={styles.scoreBreakdownItem}>
+                            <ThemedText style={styles.scoreBreakdownLabel}>Consonants</ThemedText>
+                            <ThemedText style={styles.scoreBreakdownValue}>{feedback.scoreBreakdown.consonants}/30</ThemedText>
                           </View>
-                          <ThemedText style={styles.accuracyText}>{feedback.accuracy}%</ThemedText>
+                          <View style={styles.scoreBreakdownItem}>
+                            <ThemedText style={styles.scoreBreakdownLabel}>Vowels</ThemedText>
+                            <ThemedText style={styles.scoreBreakdownValue}>{feedback.scoreBreakdown.vowels}/30</ThemedText>
+                          </View>
+                          <View style={styles.scoreBreakdownItem}>
+                            <ThemedText style={styles.scoreBreakdownLabel}>Stress</ThemedText>
+                            <ThemedText style={styles.scoreBreakdownValue}>{feedback.scoreBreakdown.stress}/20</ThemedText>
+                          </View>
+                          <View style={styles.scoreBreakdownItem}>
+                            <ThemedText style={styles.scoreBreakdownLabel}>Fluency</ThemedText>
+                            <ThemedText style={styles.scoreBreakdownValue}>{feedback.scoreBreakdown.fluency}/20</ThemedText>
+                          </View>
                         </View>
                       </View>
-                      
-                      <ThemedText style={styles.feedbackDetails}>{feedback.details}</ThemedText>
-                      
-                      <View style={styles.playbackContainer}>
-                        <TouchableOpacity 
-                          style={styles.playButton}
-                          onPress={playRecording}
-                          disabled={isPlaying}
-                        >
-                          <FontAwesome name={isPlaying ? "pause" : "play"} size={18} color="#FFFFFF" />
-                          <ThemedText style={styles.playButtonText}>
-                            {isPlaying ? "Playing..." : "Play Your Recording"}
-                          </ThemedText>
-                        </TouchableOpacity>
-                        
-                        <TouchableOpacity 
-                          style={styles.tryAgainButton}
-                          onPress={() => setRecordingStatus("ready")}
-                        >
-                          <FontAwesome name="refresh" size={18} color="#226cae" />
-                          <ThemedText style={styles.tryAgainText}>Try Again</ThemedText>
-                        </TouchableOpacity>
+                    )}
+                    
+                    <ThemedText style={styles.feedbackDetails}>{feedback.details}</ThemedText>
+                    
+                    
+                    {feedback.improvements && feedback.improvements.length > 0 && (
+                      <View style={styles.feedbackSection}>
+                        <View style={styles.improvementHeader}>
+                          <View style={styles.improvementIconContainer}>
+                            <FontAwesome name="arrow-up" size={14} color="#226cae" />
+                          </View>
+                          <ThemedText style={styles.feedbackSectionTitle}>Areas to Improve</ThemedText>
+                        </View>
+                        {feedback.improvements.map((improvement, index) => (
+                          <View key={index} style={styles.improvementItem}>
+                            <View style={styles.bulletPoint} />
+                            <ThemedText style={styles.feedbackListItem}>{improvement}</ThemedText>
+                          </View>
+                        ))}
                       </View>
+                    )}
+                    
+                    
+                    <View style={styles.playbackContainer}>
+                      <TouchableOpacity 
+                        style={styles.playButton}
+                        onPress={playRecording}
+                        disabled={isPlaying}
+                      >
+                        <FontAwesome name={isPlaying ? "pause" : "play"} size={18} color="#FFFFFF" />
+                        <ThemedText style={styles.playButtonText}>
+                          {isPlaying ? "Playing..." : "Play Your Recording"}
+                        </ThemedText>
+                      </TouchableOpacity>
                       
                       <TouchableOpacity 
-                        style={styles.nextButton}
-                        onPress={moveToNextWord}
+                        style={styles.tryAgainButton}
+                        onPress={() => setRecordingStatus("ready")}
                       >
-                        <ThemedText style={styles.nextButtonText}>
-                          {currentWordIndex < pronunciationData.length - 1 ? "Next Word" : "Finish Practice"}
-                        </ThemedText>
-                        <FontAwesome name="arrow-right" size={16} color="#FFFFFF" />
+                        <FontAwesome name="refresh" size={18} color="#226cae" />
+                        <ThemedText style={styles.tryAgainText}>Try Again</ThemedText>
                       </TouchableOpacity>
                     </View>
-                  )}
-                </View>
-              </ThemedView>
-            </Animated.View>
-        </ScrollView>
+                    
+                    <TouchableOpacity 
+                      style={styles.nextButton}
+                      onPress={moveToNextWord}
+                    >
+                      <ThemedText style={styles.nextButtonText}>
+                        {currentWordIndex < pronunciationData.length - 1 ? "Next Word" : "Finish Practice"}
+                      </ThemedText>
+                      <FontAwesome name="arrow-right" size={16} color="#FFFFFF" />
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            </ThemedView>
+          </Animated.View>
+      </ScrollView>
       </FeatureAccessWrapper>
     </View>
   );
@@ -643,6 +887,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     marginLeft: 8,
+    color: '#000000',
   },
   scrollView: {
     flex: 1,
@@ -716,20 +961,28 @@ const styles = StyleSheet.create({
   },
   tipsContainer: {
     padding: 20,
-    backgroundColor: 'rgba(255, 235, 59, 0.05)',
+    backgroundColor: 'rgba(34, 108, 174, 0.05)',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0, 0, 0, 0.05)',
   },
   tipsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 12,
+  },
+  tipIconContainer: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(34, 108, 174, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
   },
   tipsLabel: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333333',
-    marginLeft: 8,
+    color: '#226cae',
   },
   tipsText: {
     fontSize: 15,
@@ -742,9 +995,9 @@ const styles = StyleSheet.create({
   },
   recordButton: {
     backgroundColor: '#dc2929',
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#dc2929',
@@ -754,11 +1007,21 @@ const styles = StyleSheet.create({
     elevation: 5,
     borderWidth: 3,
     borderColor: 'rgba(255, 255, 255, 0.3)',
+    paddingVertical: 8,
   },
   recordButtonText: {
     color: '#FFFFFF',
     fontWeight: '600',
-    marginTop: 8,
+    marginTop: 6,
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  microphoneIconContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 40,
+    height: 40,
+    marginBottom: 2,
   },
   recordingIndicator: {
     backgroundColor: '#dc2929',
@@ -897,5 +1160,81 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 16,
     marginRight: 8,
+  },
+  scoreBreakdownContainer: {
+    backgroundColor: 'rgba(34, 108, 174, 0.05)',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  scoreBreakdownTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333333',
+    marginBottom: 8,
+  },
+  scoreBreakdownGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  scoreBreakdownItem: {
+    width: '48%',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  scoreBreakdownLabel: {
+    fontSize: 12,
+    color: '#666666',
+    marginBottom: 2,
+  },
+  scoreBreakdownValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#226cae',
+  },
+  feedbackSection: {
+    marginBottom: 16,
+    backgroundColor: 'rgba(34, 108, 174, 0.05)',
+    borderRadius: 8,
+    padding: 12,
+  },
+  improvementHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  improvementIconContainer: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'rgba(34, 108, 174, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  feedbackSectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#226cae',
+  },
+  improvementItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 6,
+  },
+  bulletPoint: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#226cae',
+    marginTop: 6,
+    marginRight: 8,
+  },
+  feedbackListItem: {
+    fontSize: 13,
+    color: '#666666',
+    lineHeight: 18,
+    flex: 1,
   },
 });

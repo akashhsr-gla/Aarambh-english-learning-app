@@ -1,10 +1,11 @@
 import { FontAwesome } from '@expo/vector-icons';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { CommonActions, useNavigation, useRoute } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Dimensions,
+  Modal,
   Platform,
   StatusBar,
   StyleSheet,
@@ -15,6 +16,7 @@ import {
 import { ThemedText } from '../components/ThemedText';
 import FeatureAccessWrapper from './components/FeatureAccessWrapper';
 import { useFeatureAccess } from './hooks/useFeatureAccess';
+import { authAPI, groupsAPI } from './services/api';
 
 const { width, height } = Dimensions.get('window');
 
@@ -70,10 +72,78 @@ export default function GroupVideoCallScreen() {
   const [hasVideo, setHasVideo] = useState(initialVideoState?.hasVideo ?? !isVoiceOnly);
   const [isSpeakerOn, setIsSpeakerOn] = useState(initialAudioState?.isSpeakerOn ?? true);
   const [showParticipants, setShowParticipants] = useState(false);
+  const [isHost, setIsHost] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [showEndModal, setShowEndModal] = useState(false);
+  const [endedByName, setEndedByName] = useState<string | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Feature access control
   const { canAccess: canAccessGroupCalls, featureInfo: groupFeatureInfo } = useFeatureAccess('group_calls');
   
+  // Load host detection and setup polling
+  useEffect(() => {
+    const loadHostStatus = async () => {
+      try {
+        const currentUser = await authAPI.getCurrentUser();
+        if (currentUser.success) {
+          const userId = currentUser.data?.user?._id || currentUser.data?._id || currentUser._id;
+          setCurrentUserId(userId);
+          
+          if (userId && participants.length > 0) {
+            const userIsHost = participants.some(p => p.id === userId && p.isHost);
+            setIsHost(userIsHost);
+          }
+        }
+      } catch (err) {
+        // Silent error handling
+      }
+    };
+
+    const pollGroupStatus = async () => {
+      if (!groupId) return;
+      try {
+        const response = await groupsAPI.getGroupDetails(groupId);
+        if (response?.success && response.data) {
+          const status = response.data.status;
+          const isActiveSession = response.data.groupSession?.isActive;
+          
+          // Session has ended if status is not active OR session is not active
+          const sessionEnded = (status && !['active', 'waiting'].includes(status)) || isActiveSession === false;
+          
+          if (sessionEnded) {
+            const hostName = response.data.host?.name || 'Host';
+            setEndedByName(hostName);
+            setShowEndModal(true);
+            // Stop polling once we detect session end
+            if (pollRef.current) {
+              clearInterval(pollRef.current);
+              pollRef.current = null;
+            }
+          }
+        }
+      } catch (error) {
+        // Silent error handling
+      }
+    };
+
+    loadHostStatus();
+    
+    if (groupId) {
+      // Set up polling to check session status
+      pollRef.current = setInterval(pollGroupStatus, 3000);
+      // Initial poll
+      pollGroupStatus();
+    }
+
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    };
+  }, [groupId, participants]);
+
   // Timer for call duration
   useEffect(() => {
     const timer = setInterval(() => {
@@ -91,18 +161,57 @@ export default function GroupVideoCallScreen() {
   };
   
   const handleEndCall = () => {
-    Alert.alert(
-      'End Call',
-      `Are you sure you want to end this group ${isVoiceOnly ? 'voice' : 'video'} call?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'End Call', 
-          style: 'destructive',
-          onPress: () => navigation.goBack()
-        }
-      ]
-    );
+    if (isHost) {
+      Alert.alert(
+        'End Call',
+        `Are you sure you want to end this group ${isVoiceOnly ? 'voice' : 'video'} call? This will end the session for all participants.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'End Call', 
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                if (groupId) {
+                  await groupsAPI.endSession(groupId);
+                }
+                // @ts-ignore
+                navigation.dispatch(
+                  CommonActions.reset({ index: 0, routes: [{ name: 'GroupDiscussionScreen' }] })
+                );
+              } catch (error) {
+                Alert.alert('Error', 'Failed to end session. Please try again.');
+              }
+            }
+          }
+        ]
+      );
+    } else {
+      Alert.alert(
+        'Leave Call',
+        `Are you sure you want to leave this group ${isVoiceOnly ? 'voice' : 'video'} call?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Leave Call', 
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                if (groupId) {
+                  await groupsAPI.leaveGroup(groupId);
+                }
+                // @ts-ignore
+                navigation.dispatch(
+                  CommonActions.reset({ index: 0, routes: [{ name: 'GroupDiscussionScreen' }] })
+                );
+              } catch (error) {
+                Alert.alert('Error', 'Failed to leave group. Please try again.');
+              }
+            }
+          }
+        ]
+      );
+    }
   };
   
   const toggleMute = () => {
@@ -339,6 +448,31 @@ export default function GroupVideoCallScreen() {
           </TouchableOpacity>
         </View>
       </View>
+      
+      {/* Session Ended Modal */}
+      <Modal visible={showEndModal} transparent animationType="fade" presentationStyle="overFullScreen" onRequestClose={() => {}}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContainer}>
+            <FontAwesome name="info-circle" size={40} color="#dc2929" />
+            <ThemedText style={styles.modalTitle}>Call Ended</ThemedText>
+            <ThemedText style={styles.modalMessage}>
+              {endedByName} has ended the group call.
+            </ThemedText>
+            <TouchableOpacity 
+              style={styles.modalButton}
+              onPress={() => {
+                setShowEndModal(false);
+                // @ts-ignore
+                navigation.dispatch(
+                  CommonActions.reset({ index: 0, routes: [{ name: 'GroupDiscussionScreen' }] })
+                );
+              }}
+            >
+              <ThemedText style={styles.modalButtonText}>OK</ThemedText>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
       </FeatureAccessWrapper>
     </View>
   );
@@ -614,5 +748,53 @@ const styles = StyleSheet.create({
   },
   activeSecondaryControl: {
     backgroundColor: 'rgba(34, 108, 174, 0.8)',
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 24,
+    width: '80%',
+    maxWidth: 350,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 8,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1a5085',
+    marginTop: 16,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalMessage: {
+    fontSize: 15,
+    color: '#333',
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 22,
+  },
+  modalButton: {
+    backgroundColor: '#226cae',
+    paddingVertical: 12,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    minWidth: 120,
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 }); 

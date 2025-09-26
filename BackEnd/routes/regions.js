@@ -81,7 +81,7 @@ router.post('/', authenticateToken, requireAdmin, validateRegion, async (req, re
 });
 
 // 2. GET ALL REGIONS (All users can access)
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { active, search, sortBy = 'name', sortOrder = 'asc' } = req.query;
 

@@ -125,17 +125,29 @@ router.post('/create-order', authenticateToken, [
     }
 
     // Create Razorpay order
-    const orderOptions = {
+    // Razorpay receipt must be <= 40 chars
+    // Sanitize any incoming receipt from client (we don't accept it)
+    const incomingReceipt = req.body && req.body.receipt ? String(req.body.receipt) : null;
+    if (incomingReceipt) {
+      console.warn('Ignoring client-provided receipt. Length =', incomingReceipt.length);
+      delete req.body.receipt;
+    }
+    // Use the shortest safe receipt to eliminate length issues
+    const shortReceipt = 'r';
+    let orderOptions = {
       amount: Math.round(finalAmount * 100), // Razorpay expects amount in paise
       currency: 'INR',
-      receipt: `order_${Date.now()}_${req.user.id}`,
-      notes: {
-        userId: req.user.id,
-        planId: planId,
-        referralCode: referralCode || 'none'
-      }
+      receipt: shortReceipt,
+      // keep notes minimal
+      notes: {}
     };
 
+    console.log('Creating Razorpay order with options:', {
+      amount: orderOptions.amount,
+      currency: orderOptions.currency,
+      receipt: orderOptions.receipt,
+      notes: orderOptions.notes
+    });
     const order = await razorpay.orders.create(orderOptions);
 
     // Create transaction record
@@ -164,8 +176,25 @@ router.post('/create-order', authenticateToken, [
       }
     });
   } catch (error) {
-    console.error('Create order error:', error);
-    res.status(500).json({ success: false, message: 'Internal server error' });
+    try {
+      console.error('Create order error:', error);
+    } catch {}
+    try {
+      console.error('Order options debug:', {
+        amount: orderOptions?.amount,
+        currency: orderOptions?.currency,
+        receipt: orderOptions?.receipt,
+        receiptLen: orderOptions?.receipt ? String(orderOptions.receipt).length : null
+      });
+    } catch {}
+    res.status(500).json({ 
+      success: false, 
+      message: 'Internal server error',
+      debug: {
+        receipt: orderOptions?.receipt,
+        receiptLen: orderOptions?.receipt ? String(orderOptions.receipt).length : null
+      }
+    });
   }
 });
 

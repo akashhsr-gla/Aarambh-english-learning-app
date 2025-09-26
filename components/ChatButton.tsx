@@ -1,24 +1,219 @@
-import { StyleSheet, View, TouchableOpacity, TextInput, Animated, Modal } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
-import { useState, useRef } from 'react';
 import { useNavigation } from '@react-navigation/native';
+import { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 
+import { authAPI, chatAPI } from '../app/services/api';
 import { ThemedText } from './ThemedText';
-import { ThemedView } from './ThemedView';
 
 interface ChatButtonProps {
   expandable?: boolean;
   navigateOnClick?: boolean;
 }
 
+interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+  metadata?: any;
+}
+
+interface Conversation {
+  id: string;
+  title: string;
+  category: string;
+  level: string;
+  messages: ChatMessage[];
+}
+
 export default function ChatButton({ expandable = true, navigateOnClick = false }: ChatButtonProps) {
   const [chatExpanded, setChatExpanded] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [currentMessage, setCurrentMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [isInitializing, setIsInitializing] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const scrollViewRef = useRef<ScrollView>(null);
   const navigation = useNavigation();
+
+  // Check authentication status on mount
+  useEffect(() => {
+    checkAuthStatus();
+  }, []);
+
+  // Initialize chat when component mounts and user is authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadSuggestions();
+    }
+  }, [isAuthenticated]);
+
+  // Initialize conversation when chat is first expanded and user is authenticated
+  useEffect(() => {
+    if (chatExpanded && !conversation && !isInitializing && isAuthenticated) {
+      initializeConversation();
+    }
+  }, [chatExpanded, conversation, isInitializing, isAuthenticated]);
+
+  // Auto-scroll to bottom when new messages are added
+  useEffect(() => {
+    if (messages.length > 0 && scrollViewRef.current) {
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }
+  }, [messages]);
+
+  const checkAuthStatus = async () => {
+    try {
+      setIsCheckingAuth(true);
+      const response = await authAPI.getCurrentUser();
+      setIsAuthenticated(response && response.success);
+    } catch (error) {
+      console.error('Authentication check failed:', error);
+      setIsAuthenticated(false);
+    } finally {
+      setIsCheckingAuth(false);
+    }
+  };
+
+  const loadSuggestions = async () => {
+    if (!isAuthenticated) return;
+    
+    try {
+      const response = await chatAPI.getSuggestions();
+      if (response.suggestions) {
+        setSuggestions(response.suggestions.slice(0, 3)); // Show first 3 suggestions
+      }
+    } catch (error: any) {
+      console.error('Failed to load suggestions:', error);
+      // If suggestions fail due to auth, re-check auth status
+      if (error.message?.includes('token') || error.message?.includes('401')) {
+        setIsAuthenticated(false);
+      }
+    }
+  };
+
+  const initializeConversation = async () => {
+    if (isInitializing || !isAuthenticated) return;
+    
+    setIsInitializing(true);
+    try {
+      const response = await chatAPI.createConversation({
+        category: 'general',
+        level: 'intermediate',
+        title: 'Language Learning Chat'
+      });
+
+      if (response.conversation) {
+        setConversation(response.conversation);
+        
+        // Add welcome message
+        const welcomeMessage: ChatMessage = {
+          id: 'welcome',
+          role: 'assistant',
+          content: 'Hello! I can help you with language learning. What would you like to know?',
+          timestamp: new Date().toISOString()
+        };
+        setMessages([welcomeMessage]);
+      }
+    } catch (error: any) {
+      console.error('Failed to initialize conversation:', error);
+      
+      // Check if error is due to authentication
+      if (error.message?.includes('token') || error.message?.includes('401')) {
+        setIsAuthenticated(false);
+        Alert.alert('Authentication Required', 'Please log in to use the chat feature.');
+      } else {
+        Alert.alert('Error', 'Failed to start chat. Please try again.');
+      }
+    } finally {
+      setIsInitializing(false);
+    }
+  };
+
+  const sendMessage = async (text: string) => {
+    if (!text.trim() || isLoading || !conversation || !isAuthenticated) return;
+
+    const userMessage: ChatMessage = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: text.trim(),
+      timestamp: new Date().toISOString()
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setCurrentMessage('');
+    setIsLoading(true);
+
+    try {
+      const response = await chatAPI.sendMessage(conversation.id, text.trim(), {
+        category: conversation.category,
+        level: conversation.level
+      });
+
+      if (response.assistantMessage) {
+        const assistantMessage: ChatMessage = {
+          id: response.assistantMessage.id,
+          role: 'assistant',
+          content: response.assistantMessage.content,
+          timestamp: response.assistantMessage.timestamp,
+          metadata: response.assistantMessage.metadata
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+      }
+    } catch (error: any) {
+      console.error('Failed to send message:', error);
+      
+      // Check if error is due to authentication
+      if (error.message?.includes('token') || error.message?.includes('401')) {
+        setIsAuthenticated(false);
+        const authErrorMessage: ChatMessage = {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: "Your session has expired. Please log in again to continue chatting.",
+          timestamp: new Date().toISOString()
+        };
+        setMessages(prev => [...prev, authErrorMessage]);
+      } else {
+        // Add error message
+        const errorMessage: ChatMessage = {
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: "I'm sorry, I'm having trouble responding right now. Please try again in a moment.",
+          timestamp: new Date().toISOString()
+        };
+        setMessages(prev => [...prev, errorMessage]);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSuggestionPress = (suggestion: string) => {
+    setCurrentMessage(suggestion);
+  };
 
   const toggleChat = () => {
     if (navigateOnClick) {
       navigation.navigate('ChatScreen' as never);
     } else if (expandable) {
+      // Check authentication before expanding chat
+      if (!isAuthenticated && !isCheckingAuth) {
+        Alert.alert(
+          'Authentication Required',
+          'Please log in to use the chat feature.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Login', onPress: () => navigation.navigate('LoginScreen' as never) }
+          ]
+        );
+        return;
+      }
       setChatExpanded(!chatExpanded);
     }
   };
@@ -30,32 +225,94 @@ export default function ChatButton({ expandable = true, navigateOnClick = false 
           <View style={styles.chatPanelHeader}>
             <ThemedText style={styles.chatPanelTitle}>Language Assistant</ThemedText>
             <TouchableOpacity onPress={toggleChat}>
-              <FontAwesome name="times" size={20} color="#666666" />
+              <FontAwesome name="times" size={20} color="#FFFFFF" />
             </TouchableOpacity>
           </View>
           
-          <View style={styles.chatMessages}>
-            <View style={styles.botMessage}>
-              <ThemedText style={styles.messageText}>Hello! I can help you with language learning. What would you like to know?</ThemedText>
-            </View>
-            
-            <View style={styles.userMessage}>
-              <ThemedText style={styles.userMessageText}>How can I improve my pronunciation?</ThemedText>
-            </View>
-            
-            <View style={styles.botMessage}>
-              <ThemedText style={styles.messageText}>Try our <ThemedText style={styles.highlightText}>Pronunciation Challenge</ThemedText> game! It will help you practice difficult sounds and get feedback.</ThemedText>
-            </View>
-          </View>
+          <ScrollView 
+            ref={scrollViewRef}
+            style={styles.chatMessages}
+            showsVerticalScrollIndicator={false}
+          >
+            {isCheckingAuth ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color="#dc2929" />
+                <ThemedText style={styles.loadingText}>Checking authentication...</ThemedText>
+              </View>
+            ) : !isAuthenticated ? (
+              <View style={styles.authRequiredContainer}>
+                <FontAwesome name="lock" size={32} color="#dc2929" style={styles.lockIcon} />
+                <ThemedText style={styles.authRequiredText}>Please log in to use chat</ThemedText>
+                <TouchableOpacity 
+                  style={styles.loginButton}
+                  onPress={() => navigation.navigate('LoginScreen' as never)}
+                >
+                  <ThemedText style={styles.loginButtonText}>Login</ThemedText>
+                </TouchableOpacity>
+              </View>
+            ) : isInitializing ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="small" color="#dc2929" />
+                <ThemedText style={styles.loadingText}>Starting chat...</ThemedText>
+              </View>
+            ) : (
+              <>
+                {messages.map((message) => (
+                  <View key={message.id} style={message.role === 'user' ? styles.userMessage : styles.botMessage}>
+                    <ThemedText style={message.role === 'user' ? styles.userMessageText : styles.messageText}>
+                      {message.content}
+                    </ThemedText>
+                  </View>
+                ))}
+                
+                {isLoading && (
+                  <View style={styles.botMessage}>
+                    <View style={styles.typingIndicator}>
+                      <ActivityIndicator size="small" color="#666666" />
+                      <ThemedText style={styles.typingText}>Thinking...</ThemedText>
+                    </View>
+                  </View>
+                )}
+                
+                {messages.length === 1 && suggestions.length > 0 && (
+                  <View style={styles.suggestionsContainer}>
+                    <ThemedText style={styles.suggestionsTitle}>Try asking:</ThemedText>
+                    {suggestions.map((suggestion, index) => (
+                      <TouchableOpacity 
+                        key={index}
+                        style={styles.suggestionButton}
+                        onPress={() => handleSuggestionPress(suggestion)}
+                      >
+                        <ThemedText style={styles.suggestionText}>{suggestion}</ThemedText>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </>
+            )}
+          </ScrollView>
           
           <View style={styles.chatInputContainer}>
             <TextInput 
               style={styles.chatInput} 
               placeholder="Ask a question..."
               placeholderTextColor="#999999"
+              value={currentMessage}
+              onChangeText={setCurrentMessage}
+              onSubmitEditing={() => sendMessage(currentMessage)}
+              editable={!isLoading && !isInitializing}
+              multiline
             />
-            <TouchableOpacity style={styles.sendButton}>
-              <FontAwesome name="paper-plane" size={18} color="#FFFFFF" />
+            <TouchableOpacity 
+              style={[styles.sendButton, (!currentMessage.trim() || isLoading || !isAuthenticated) && styles.sendButtonDisabled]}
+              onPress={() => sendMessage(currentMessage)}
+              disabled={!currentMessage.trim() || isLoading || isInitializing || !isAuthenticated}
+            >
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <FontAwesome name="paper-plane" size={18} color="#FFFFFF" />
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -178,5 +435,84 @@ const styles = StyleSheet.create({
     backgroundColor: '#226cae',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  sendButtonDisabled: {
+    backgroundColor: '#cccccc',
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#666666',
+  },
+  typingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(34, 108, 174, 0.1)',
+    padding: 12,
+    borderRadius: 15,
+    borderTopLeftRadius: 4,
+  },
+  typingText: {
+    marginLeft: 8,
+    fontSize: 14,
+    color: '#666666',
+    fontStyle: 'italic',
+  },
+  suggestionsContainer: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  suggestionsTitle: {
+    fontSize: 12,
+    color: '#666666',
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  suggestionButton: {
+    backgroundColor: 'rgba(220, 41, 41, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(220, 41, 41, 0.2)',
+    borderRadius: 12,
+    padding: 8,
+    marginBottom: 6,
+  },
+  suggestionText: {
+    fontSize: 12,
+    color: '#dc2929',
+    textAlign: 'center',
+  },
+  authRequiredContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  lockIcon: {
+    marginBottom: 12,
+  },
+  authRequiredText: {
+    fontSize: 14,
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  loginButton: {
+    backgroundColor: '#dc2929',
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  loginButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '500',
   },
 }); 

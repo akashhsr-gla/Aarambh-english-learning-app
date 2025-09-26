@@ -939,11 +939,11 @@ export default function CallScreen() {
     return (
       <View style={styles.container}>
         <StatusBar style="light" />
-        <LinearGradient
-          colors={['rgba(34, 108, 174, 1)', 'rgba(26, 80, 133, 1)']}
-          style={styles.background}
-        />
-        
+      <LinearGradient
+        colors={['rgba(34, 108, 174, 1)', 'rgba(26, 80, 133, 1)']}
+        style={styles.background}
+      />
+      
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#FFFFFF" />
           <ThemedText style={styles.loadingText}>{getStatusText()}</ThemedText>

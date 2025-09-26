@@ -3,11 +3,13 @@ import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Dimensions, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+// Work around TS JSX typing mismatch for expo-linear-gradient in some setups
+const Gradient = (LinearGradient as unknown) as React.ComponentType<any>;
 
 import GameHeader from '../components/GameHeader';
 import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
-import { gamesAPI } from './services/api';
+import { gamesAPI, sessionsAPI } from './services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -87,9 +89,107 @@ export default function GameScreen() {
   const [gameOver, setGameOver] = useState(false);
   const [fadeAnim] = useState(new Animated.Value(1));
   const [slideAnim] = useState(new Animated.Value(0));
+  
+  // Session management
+  const [activeSession, setActiveSession] = useState<any>(null);
+  const [sessionLoading, setSessionLoading] = useState(true);
+
+  // Check for active game session
+  const checkActiveGameSession = async () => {
+    try {
+      setSessionLoading(true);
+      const response = await sessionsAPI.getActiveGameSession();
+      
+      if (response.success && response.data) {
+        console.log('🎮 Found active game session:', response.data);
+        setActiveSession(response.data);
+        
+        // Show option to continue the game
+        Alert.alert(
+          'Continue Game?',
+          `You have an active ${response.data.gameSession?.gameType || 'game'} session. Would you like to continue where you left off?`,
+          [
+            {
+              text: 'Start New',
+              style: 'cancel',
+              onPress: () => {
+                setActiveSession(null);
+                setSessionLoading(false);
+              }
+            },
+            {
+              text: 'Continue',
+              onPress: () => continueGameSession(response.data)
+            }
+          ]
+        );
+      } else {
+        setActiveSession(null);
+        setSessionLoading(false);
+      }
+    } catch (error) {
+      console.error('Error checking active game session:', error);
+      setActiveSession(null);
+      setSessionLoading(false);
+    }
+  };
+
+  const continueGameSession = (sessionData: any) => {
+    if (sessionData.gameSession) {
+      const gameSession = sessionData.gameSession;
+      
+      // Restore game state from session
+      setSelectedGame({
+        _id: gameSession.game || 'temp-id',
+        title: `${gameSession.gameType} Game`,
+        description: `Playing ${gameSession.gameType} game`,
+        gameType: gameSession.gameType,
+        difficulty: gameSession.difficulty,
+        level: gameSession.level || 1,
+        timeLimit: gameSession.timeLeft || 300,
+        maxScore: 100,
+        totalQuestions: gameSession.totalQuestions || 10,
+        questions: [] // Questions will be loaded separately
+      });
+      
+      setCurrentQuestionIndex(gameSession.currentQuestionIndex || 0);
+      setTimeLeft(gameSession.timeLeft || 0);
+      setScore(gameSession.scores?.[0]?.score || 0);
+      setGameStarted(true);
+      setSessionLoading(false);
+      
+      console.log('🎮 Restored game session:', {
+        currentQuestionIndex: gameSession.currentQuestionIndex,
+        timeLeft: gameSession.timeLeft,
+        gameType: gameSession.gameType
+      });
+    }
+  };
+
+  const saveGameSession = async () => {
+    if (!selectedGame) return;
+    
+    try {
+      await sessionsAPI.createOrUpdateGameSession({
+        gameId: selectedGame._id,
+        gameType: selectedGame.gameType,
+        difficulty: selectedGame.difficulty,
+        currentQuestionIndex,
+        timeLeft,
+        answers: [], // Add current answers if needed
+        score,
+        totalQuestions: selectedGame.totalQuestions
+      });
+      
+      console.log('💾 Game session saved');
+    } catch (error) {
+      console.error('Error saving game session:', error);
+    }
+  };
 
   // Fetch games for the selected type
   useEffect(() => {
+    checkActiveGameSession();
     fetchGames();
   }, [gameType]);
 
@@ -183,7 +283,7 @@ export default function GameScreen() {
     }
   };
 
-  // Timer countdown
+  // Timer countdown and session saving
   useEffect(() => {
     if (!gameStarted || gameOver || showResult) return;
 
@@ -198,8 +298,23 @@ export default function GameScreen() {
       });
     }, 1000);
 
-    return () => clearInterval(timer);
-  }, [gameStarted, gameOver, showResult]);
+    // Save session every 30 seconds
+    const sessionSaver = setInterval(() => {
+      saveGameSession();
+    }, 30000);
+
+    return () => {
+      clearInterval(timer);
+      clearInterval(sessionSaver);
+    };
+  }, [gameStarted, gameOver, showResult, currentQuestionIndex, score]);
+
+  // Save session when important game state changes
+  useEffect(() => {
+    if (gameStarted && !gameOver) {
+      saveGameSession();
+    }
+  }, [currentQuestionIndex, score]);
 
   const handleTimeout = () => {
     setShowResult(true);
@@ -313,7 +428,7 @@ export default function GameScreen() {
   if (loading) {
     return (
       <View style={styles.container}>
-        <LinearGradient
+        <Gradient
           colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -335,7 +450,7 @@ export default function GameScreen() {
   if (error) {
     return (
       <View style={styles.container}>
-        <LinearGradient
+        <Gradient
           colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -362,7 +477,7 @@ export default function GameScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient
+      <Gradient
         colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -479,7 +594,7 @@ export default function GameScreen() {
   // Game selection screen
   return (
     <View style={styles.container}>
-      <LinearGradient
+      <Gradient
         colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}

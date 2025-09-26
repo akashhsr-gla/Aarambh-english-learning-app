@@ -3,11 +3,13 @@ import { useNavigation } from '@react-navigation/native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import React, { useState } from 'react';
-import { Alert, Animated, Dimensions, KeyboardAvoidingView, Platform, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { Alert, Animated, Dimensions, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { ThemedText } from '../components/ThemedText';
-import { authAPI } from './services/api';
+import { authAPI, regionsAPI } from './services/api';
+// Work around TS JSX typing mismatch for expo-linear-gradient in some setups
+const Gradient = (LinearGradient as unknown) as React.ComponentType<any>;
 
 const { width, height } = Dimensions.get('window');
 
@@ -20,8 +22,12 @@ export default function LoginScreen() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [referralCode, setReferralCode] = useState('');
+  const [region, setRegion] = useState('');
+  const [regions, setRegions] = useState<{_id: string; name: string}[]>([]);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRegionDropdownOpen, setIsRegionDropdownOpen] = useState(false);
+  const regionDropdownHeight = useRef(new Animated.Value(0)).current;
 
   // Animated values for subtle UI animations
   const [fadeAnim] = useState(new Animated.Value(0));
@@ -41,7 +47,42 @@ export default function LoginScreen() {
         useNativeDriver: true,
       }),
     ]).start();
+    
+    // Fetch regions for signup
+    fetchRegions();
   }, []);
+
+  const fetchRegions = async () => {
+    try {
+      console.log('🌐 Fetching regions from backend...');
+      const response = await regionsAPI.getAllRegions();
+      console.log('🌐 Regions response:', response);
+      
+      if (response.success && response.data?.regions) {
+        setRegions(response.data.regions);
+        console.log('✅ Regions loaded successfully:', response.data.regions.length);
+      } else {
+        
+        setRegions([
+          { _id: '507f1f77bcf86cd799439011', name: 'North India' },
+          { _id: '507f1f77bcf86cd799439012', name: 'South India' },
+          { _id: '507f1f77bcf86cd799439013', name: 'East India' },
+          { _id: '507f1f77bcf86cd799439014', name: 'West India' },
+          { _id: '507f1f77bcf86cd799439015', name: 'Central India' }
+        ]);
+      }
+    } catch (err: unknown) {
+      console.error('❌ Error fetching regions:', err);
+      // Fallback to hardcoded regions for testing
+      setRegions([
+        { _id: '507f1f77bcf86cd799439011', name: 'North India' },
+        { _id: '507f1f77bcf86cd799439012', name: 'South India' },
+        { _id: '507f1f77bcf86cd799439013', name: 'East India' },
+        { _id: '507f1f77bcf86cd799439014', name: 'West India' },
+        { _id: '507f1f77bcf86cd799439015', name: 'Central India' }
+      ]);
+    }
+  };
 
   // Animation when switching between login and signup
   React.useEffect(() => {
@@ -59,6 +100,15 @@ export default function LoginScreen() {
     ]).start();
   }, [isLogin, isTeacher]);
 
+  // Animation for region dropdown
+  React.useEffect(() => {
+    Animated.timing(regionDropdownHeight, {
+      toValue: isRegionDropdownOpen ? 200 : 0,
+      duration: 300,
+      useNativeDriver: false,
+    }).start();
+  }, [isRegionDropdownOpen]);
+
   const handleLogin = async () => {
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all required fields');
@@ -67,20 +117,40 @@ export default function LoginScreen() {
 
     setIsLoading(true);
     try {
+    
       const response = await authAPI.login(email, password);
+  
+      
       if (response.success) {
-        // Navigate based on user role
+       
         if (isTeacher) {
           navigation.navigate('TeacherDashboard' as never);
         } else {
           navigation.navigate('(tabs)' as never);
         }
       } else {
+    
         Alert.alert('Login Failed', response.message || 'Invalid credentials');
       }
-    } catch (error) {
-      Alert.alert('Error', 'Network error. Please try again.');
-      console.error('Login error:', error);
+    } catch (err: unknown) {
+      let errorMessage = 'Network error. Please try again.';
+      const message = err instanceof Error ? err.message : String(err);
+      // Try to extract more specific error information
+      if (message) {
+        if (message.includes('Invalid credentials')) {
+          errorMessage = 'Invalid email or password. Please check your credentials and try again.';
+        } else if (message.includes('Account is deactivated')) {
+          errorMessage = 'Your account has been deactivated. Please contact support.';
+        } else if (message.includes('Validation')) {
+          errorMessage = 'Please enter a valid email address and password.';
+        } else if (message.includes('Invalid JSON')) {
+          errorMessage = 'Server error. Please try again later.';
+        } else {
+          errorMessage = message;
+        }
+      }
+      
+      Alert.alert('Login Error', errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -92,6 +162,13 @@ export default function LoginScreen() {
       return;
     }
 
+    // For region, use the selected region ID or fallback to the region name if no dropdown selection
+    let selectedRegion = region;
+    if (!selectedRegion && !isLogin) {
+      Alert.alert('Error', 'Please select a region');
+      return;
+    }
+
     setIsLoading(true);
     try {
       const userData = {
@@ -100,23 +177,54 @@ export default function LoginScreen() {
         password,
         phone,
         role: isTeacher ? 'teacher' : 'student',
+        region: selectedRegion,
         referralCode: referralCode || undefined
       };
 
+      console.log('🚀 Attempting signup with data:', userData);
       const response = await authAPI.register(userData);
+      console.log('🚀 Signup response:', response);
+      
       if (response.success) {
-        // Navigate based on user role
-        if (isTeacher) {
-          navigation.navigate('TeacherDashboard' as never);
-        } else {
-          navigation.navigate('(tabs)' as never);
-        }
+        console.log('✅ Signup successful, token stored');
+        Alert.alert('Success', 'Account created successfully!', [
+          {
+            text: 'OK',
+            onPress: () => {
+              // Navigate based on user role
+              if (isTeacher) {
+                navigation.navigate('TeacherDashboard' as never);
+              } else {
+                navigation.navigate('(tabs)' as never);
+              }
+            }
+          }
+        ]);
       } else {
+        console.log('❌ Signup failed:', response.message);
         Alert.alert('Signup Failed', response.message || 'Failed to create account');
       }
-    } catch (error) {
-      Alert.alert('Error', 'Network error. Please try again.');
-      console.error('Signup error:', error);
+    } catch (err: unknown) {
+      console.error('❌ Signup error:', err);
+      let errorMessage = 'Network error. Please try again.';
+      const message = err instanceof Error ? err.message : String(err);
+      
+      // Try to extract more specific error information
+      if (message) {
+        if (message.includes('email already exists')) {
+          errorMessage = 'An account with this email already exists. Please try logging in instead.';
+        } else if (message.includes('phone already exists')) {
+          errorMessage = 'An account with this phone number already exists.';
+        } else if (message.includes('Validation')) {
+          errorMessage = message;
+        } else if (message.includes('Invalid JSON')) {
+          errorMessage = 'Server error. Please try again later.';
+        } else {
+          errorMessage = message;
+        }
+      }
+      
+      Alert.alert('Signup Error', errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -129,6 +237,17 @@ export default function LoginScreen() {
     setName('');
     setPhone('');
     setReferralCode('');
+    setRegion('');
+    setIsRegionDropdownOpen(false);
+  };
+
+  const toggleRegionDropdown = () => {
+    setIsRegionDropdownOpen(!isRegionDropdownOpen);
+  };
+
+  const selectRegion = (selectedRegion: {_id: string; name: string}) => {
+    setRegion(selectedRegion._id);
+    setIsRegionDropdownOpen(false);
   };
 
   return (
@@ -139,7 +258,7 @@ export default function LoginScreen() {
       <StatusBar style="light" />
       
       {/* Background gradient */}
-      <LinearGradient
+      <Gradient
         colors={['rgba(220, 41, 41, 0.8)', 'rgba(34, 108, 174, 0.8)']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -236,8 +355,8 @@ export default function LoginScreen() {
               />
             </View>
             
-            {/* Phone number field for teacher registration */}
-            {isTeacher && !isLogin && (
+            {/* Phone number field for all registration */}
+            {!isLogin && (
               <View style={styles.inputGroup}>
                 <View style={styles.inputIcon}>
                   <FontAwesome name="phone" size={18} color="#666666" />
@@ -250,6 +369,65 @@ export default function LoginScreen() {
                   onChangeText={setPhone}
                   keyboardType="phone-pad"
                 />
+              </View>
+            )}
+            
+            {/* Region selection field for all registration */}
+            {!isLogin && (
+              <View style={styles.regionInputContainer}>
+                <View style={styles.inputGroup}>
+                  <View style={styles.inputIcon}>
+                    <FontAwesome name="map-marker" size={18} color="#666666" />
+                  </View>
+                  <View style={styles.pickerContainer}>
+                    <TouchableOpacity 
+                      style={styles.pickerButton}
+                      onPress={toggleRegionDropdown}
+                      activeOpacity={0.8}
+                    >
+                      <ThemedText style={[styles.pickerText, !region && styles.placeholderText]}>
+                        {region ? regions.find(r => r._id === region)?.name || 'Select Region' : 'Select Region'}
+                      </ThemedText>
+                      <FontAwesome 
+                        name={isRegionDropdownOpen ? "chevron-up" : "chevron-down"} 
+                        size={16} 
+                        color="#666666" 
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+                
+                {/* Animated Dropdown */}
+                <Animated.View style={[styles.dropdownContainer, { height: regionDropdownHeight }]}>
+                  <ScrollView 
+                    showsVerticalScrollIndicator={true} 
+                    style={styles.dropdownList}
+                    nestedScrollEnabled={true}
+                  >
+                    {regions.map((regionItem) => (
+                      <TouchableOpacity 
+                        key={regionItem._id}
+                        style={[
+                          styles.dropdownItem,
+                          region === regionItem._id && styles.selectedDropdownItem
+                        ]}
+                        onPress={() => selectRegion(regionItem)}
+                      >
+                        <ThemedText 
+                          style={[
+                            styles.dropdownItemText,
+                            region === regionItem._id && styles.selectedDropdownItemText
+                          ]}
+                        >
+                          {regionItem.name}
+                        </ThemedText>
+                        {region === regionItem._id && (
+                          <FontAwesome name="check" size={16} color="#dc2929" />
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                </Animated.View>
               </View>
             )}
             
@@ -399,6 +577,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 5,
+    zIndex: 1000,
   },
   userTypeContainer: {
     flexDirection: 'row',
@@ -452,6 +631,11 @@ const styles = StyleSheet.create({
   },
   inputsContainer: {
     marginBottom: 20,
+  },
+  regionInputContainer: {
+    position: 'relative',
+    marginBottom: 15,
+    zIndex: 99999,
   },
   inputGroup: {
     flexDirection: 'row',
@@ -567,6 +751,70 @@ const styles = StyleSheet.create({
   },
   switchModeTextHighlight: {
     color: '#226cae',
+    fontWeight: '600',
+  },
+  pickerContainer: {
+    flex: 1,
+    position: 'relative',
+    zIndex: 99999,
+  },
+  pickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 15,
+    paddingHorizontal: 15,
+  },
+  pickerText: {
+    fontSize: 16,
+    color: '#333333',
+    flex: 1,
+  },
+  placeholderText: {
+    color: '#999999',
+  },
+  dropdownContainer: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    marginTop: 5,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 20,
+    zIndex: 100000,
+    overflow: 'hidden',
+  },
+  dropdownList: {
+    maxHeight: 200,
+    zIndex: 100001,
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+    zIndex: 100001,
+  },
+  selectedDropdownItem: {
+    backgroundColor: '#FFF5F5',
+  },
+  dropdownItemText: {
+    fontSize: 16,
+    color: '#333333',
+    flex: 1,
+  },
+  selectedDropdownItemText: {
+    color: '#dc2929',
     fontWeight: '600',
   },
 }); 

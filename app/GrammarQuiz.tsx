@@ -3,13 +3,15 @@ import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Animated, Dimensions, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+// Work around TS JSX typing mismatch for expo-linear-gradient in some setups
+const Gradient = (LinearGradient as unknown) as React.ComponentType<any>;
 
 import GameHeader from '../components/GameHeader';
 import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
 import FeatureAccessWrapper from './components/FeatureAccessWrapper';
 import { useFeatureAccess } from './hooks/useFeatureAccess';
-import { gamesAPI } from './services/api';
+import { gamesAPI, sessionsAPI } from './services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -38,6 +40,10 @@ export default function GrammarQuiz() {
   const [fadeAnim] = useState(new Animated.Value(1));
   const [slideAnim] = useState(new Animated.Value(0));
   
+  // Session management
+  const [activeSession, setActiveSession] = useState<any>(null);
+  const [sessionLoading, setSessionLoading] = useState(true);
+  
   // Backend data states
   const [quizData, setQuizData] = useState<QuizQuestion[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,10 +60,84 @@ export default function GrammarQuiz() {
 
   const currentQuestion = quizData[currentQuestionIndex];
 
-  // Fetch quiz data from backend
+  // Check for active session and fetch quiz data
   useEffect(() => {
+    checkActiveGrammarSession();
     fetchQuizData();
   }, []);
+
+  const checkActiveGrammarSession = async () => {
+    try {
+      setSessionLoading(true);
+      const response = await sessionsAPI.getActiveGameSession();
+      
+      if (response.success && response.data && response.data.gameSession?.gameType === 'grammar') {
+        console.log('📚 Found active grammar session:', response.data);
+        setActiveSession(response.data);
+        
+        Alert.alert(
+          'Continue Grammar Quiz?',
+          'You have an active grammar quiz session. Would you like to continue where you left off?',
+          [
+            {
+              text: 'Start New',
+              style: 'cancel',
+              onPress: () => {
+                setActiveSession(null);
+                setSessionLoading(false);
+              }
+            },
+            {
+              text: 'Continue',
+              onPress: () => continueGrammarSession(response.data)
+            }
+          ]
+        );
+      } else {
+        setActiveSession(null);
+        setSessionLoading(false);
+      }
+    } catch (error) {
+      console.error('Error checking active grammar session:', error);
+      setActiveSession(null);
+      setSessionLoading(false);
+    }
+  };
+
+  const continueGrammarSession = (sessionData: any) => {
+    if (sessionData.gameSession) {
+      const gameSession = sessionData.gameSession;
+      setCurrentQuestionIndex(gameSession.currentQuestionIndex || 0);
+      setTimeLeft(gameSession.timeLeft || 30);
+      setScore(gameSession.scores?.[0]?.score || 0);
+      setSessionLoading(false);
+      
+      console.log('📚 Restored grammar session:', {
+        currentQuestionIndex: gameSession.currentQuestionIndex,
+        timeLeft: gameSession.timeLeft,
+        score: gameSession.scores?.[0]?.score || 0
+      });
+    }
+  };
+
+  const saveGrammarSession = async () => {
+    if (!currentQuestion) return;
+    
+    try {
+      await sessionsAPI.createOrUpdateGameSession({
+        gameId: 'grammar-quiz-id',
+        gameType: 'grammar',
+        difficulty: 'medium',
+        currentQuestionIndex,
+        timeLeft,
+        answers: [],
+        score,
+        totalQuestions: quizData.length
+      });
+    } catch (error) {
+      console.error('Error saving grammar session:', error);
+    }
+  };
 
   const fetchQuizData = async () => {
     try {
@@ -113,7 +193,7 @@ export default function GrammarQuiz() {
     }
   };
 
-  // Timer countdown
+  // Timer countdown and session saving
   useEffect(() => {
     if (showExplanation || quizCompleted || !currentQuestion) return;
 
@@ -128,8 +208,23 @@ export default function GrammarQuiz() {
       });
     }, 1000);
 
-    return () => clearInterval(timer);
+    // Save session every 15 seconds
+    const sessionSaver = setInterval(() => {
+      saveGrammarSession();
+    }, 15000);
+
+    return () => {
+      clearInterval(timer);
+      clearInterval(sessionSaver);
+    };
   }, [currentQuestionIndex, showExplanation, quizCompleted, currentQuestion]);
+
+  // Save session when important state changes
+  useEffect(() => {
+    if (currentQuestion && !quizCompleted) {
+      saveGrammarSession();
+    }
+  }, [currentQuestionIndex, score]);
 
   // Reset animations when question changes
   useEffect(() => {
@@ -232,7 +327,7 @@ export default function GrammarQuiz() {
   if (loading) {
     return (
       <View style={styles.container}>
-        <LinearGradient
+        <Gradient
           colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -250,7 +345,7 @@ export default function GrammarQuiz() {
   if (error) {
     return (
       <View style={styles.container}>
-        <LinearGradient
+        <Gradient
           colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -271,7 +366,7 @@ export default function GrammarQuiz() {
   if (!currentQuestion) {
     return (
       <View style={styles.container}>
-        <LinearGradient
+        <Gradient
           colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
@@ -288,7 +383,7 @@ export default function GrammarQuiz() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient
+      <Gradient
         colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}

@@ -4,12 +4,15 @@ import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
+// Work around TS JSX typing mismatch for expo-linear-gradient in some setups
+const Gradient = (LinearGradient as unknown) as React.ComponentType<any>;
+
 import GameHeader from '../components/GameHeader';
 import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
 import FeatureAccessWrapper from './components/FeatureAccessWrapper';
 import { useFeatureAccess } from './hooks/useFeatureAccess';
-import { groupsAPI } from './services/api';
+import { authAPI, groupsAPI } from './services/api';
 
 // Define the types for route params
 interface GroupInfo {
@@ -39,12 +42,20 @@ export default function GroupWaitingRoom() {
   const route = useRoute();
   const { groupInfo, groupId, sessionType = 'chat' } = (route.params as RouteParams) || { groupInfo: null };
   
-  const [participants, setParticipants] = useState(mockParticipants);
+  const [participants, setParticipants] = useState<Array<{
+    id: string;
+    name: string;
+    avatar: string | null;
+    isHost: boolean;
+    isReady: boolean;
+  }>>([]);
   const [isGroupCodeCopied, setIsGroupCodeCopied] = useState(false);
   const [timeWaiting, setTimeWaiting] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [groupDetails, setGroupDetails] = useState<any | null>(null);
+  const [isHost, setIsHost] = useState(false);
+  const [sessionStarted, setSessionStarted] = useState(false);
 
   // Feature access control
   const { canAccess: canAccessGroupCalls, featureInfo: groupFeatureInfo } = useFeatureAccess('group_calls');
@@ -67,16 +78,135 @@ export default function GroupWaitingRoom() {
       
       setGroupDetails(group);
       
-      // Transform backend participants to frontend format
-      const backendParticipants = group.participants.map((p: any) => ({
-        id: p.user._id || p.user,
-        name: p.user.name || 'Unknown',
-        avatar: p.user.profilePicture || null,
-        isHost: p.role === 'host',
-        isReady: p.isActive // Use isActive as ready status
-      }));
       
+      // Check if current user is the host
+      try {
+        const currentUser = await authAPI.getCurrentUser();
+        
+        // Try different possible response structures
+        let currentUserId = null;
+        if (currentUser.data?.user?._id) {
+          currentUserId = currentUser.data.user._id;
+        } else if (currentUser.data?._id) {
+          currentUserId = currentUser.data._id;
+        } else if (currentUser._id) {
+          currentUserId = currentUser._id;
+        }
+        
+        console.log('🔍 Current user ID:', currentUserId);
+        
+        if (currentUserId) {
+          // First try to match with participants (backend flattens user data)
+          const userIsHost = group.participants.some((p: any) => {
+            const participantUserId = p.id || p._id;
+            console.log('🔍 Comparing participant ID:', participantUserId, 'with current user ID:', currentUserId);
+            return participantUserId && participantUserId.toString() === currentUserId.toString() && p.role === 'host';
+          });
+          
+          // If not found in participants, check if user is the group host
+          const isGroupHost = group.host && group.host.id && group.host.id.toString() === currentUserId.toString();
+          console.log('🔍 Group host object:', group.host);
+          console.log('🔍 Group host ID:', group.host?.id);
+          console.log('🔍 Current user ID:', currentUserId);
+          console.log('🔍 Is group host match:', isGroupHost);
+          
+          const finalIsHost = userIsHost || isGroupHost;
+          setIsHost(finalIsHost);
+          console.log('🔍 User is host (participant):', userIsHost);
+          console.log('🔍 User is group host:', isGroupHost);
+          console.log('🔍 Final isHost:', finalIsHost);
+        } else {
+          console.log('🔍 No user ID found, assuming not host');
+          setIsHost(false);
+        }
+      } catch (err) {
+        console.error('Error getting current user:', err);
+        setIsHost(false);
+      }
+      
+      // Transform backend participants to frontend format
+      // The backend already flattens the user data, so we can access it directly
+      const backendParticipants = (group.participants || []).map((p: any) => {
+        console.log('🔍 Processing participant:', p);
+        console.log('🔍 Participant data structure:', {
+          id: p.id,
+          name: p.name,
+          email: p.email,
+          profilePicture: p.profilePicture,
+          role: p.role,
+          isActive: p.isActive
+        });
+        
+        const mappedParticipant = {
+          id: p.id || p._id,
+          name: p.name || 'Unknown',
+          avatar: p.profilePicture || null,
+          isHost: p.role === 'host',
+          isReady: true // Mark all participants as ready by default
+        };
+        console.log('🔍 Mapped participant:', mappedParticipant);
+        return mappedParticipant;
+      });
+      
+      console.log('🔍 Mapped participants:', backendParticipants);
       setParticipants(backendParticipants);
+      
+      // Check if session has started and navigate participants automatically
+      console.log('🔍 Checking session status:', {
+        status: group.status,
+        sessionActive: group.groupSession?.isActive,
+        sessionType: group.groupSession?.sessionType,
+        sessionStarted
+      });
+      
+      if (group.status === 'active' && group.groupSession?.isActive) {
+        console.log('🔍 Session is active! Navigating to appropriate screen...');
+        console.log('🔍 Session type:', group.groupSession.sessionType);
+        console.log('🔍 Session started flag:', sessionStarted);
+        
+        // Navigate to the appropriate screen based on session type
+        const sessionType = group.groupSession.sessionType;
+        const readyParticipants = backendParticipants.filter((p: any) => p.isReady);
+        
+        console.log('🔍 Ready participants for navigation:', readyParticipants);
+        
+        if (sessionType === 'chat') {
+          console.log('🔍 Navigating to GroupChatScreen...');
+          // @ts-ignore
+          navigation.navigate('GroupChatScreen', { 
+            groupInfo, 
+            participants: readyParticipants,
+            groupId
+          });
+        } else if (sessionType === 'voice') {
+          console.log('🔍 Navigating to GroupVideoCallScreen (voice)...');
+          // @ts-ignore
+          navigation.navigate('GroupVideoCallScreen', { 
+            groupInfo, 
+            participants: readyParticipants,
+            groupId,
+            isVoiceOnly: true,
+            initialAudioState: { isMuted, isSpeakerOn }
+          });
+        } else if (sessionType === 'video') {
+          console.log('🔍 Navigating to GroupVideoCallScreen (video)...');
+          // @ts-ignore
+          navigation.navigate('GroupVideoCallScreen', { 
+            groupInfo, 
+            participants: readyParticipants,
+            groupId,
+            initialAudioState: { isMuted, isSpeakerOn },
+            initialVideoState: { hasVideo }
+          });
+        }
+        
+        setSessionStarted(true);
+      } else {
+        console.log('🔍 Session not active yet. Status:', group.status, 'Session active:', group.groupSession?.isActive);
+      }
+      
+      // If session is active but we haven't navigated yet, show a join button
+   
     } catch (err: any) {
       console.error('Error loading group details:', err);
       setError(err.message || 'Failed to load group details');
@@ -102,42 +232,40 @@ export default function GroupWaitingRoom() {
   const handleStartDiscussion = async (mode: 'chat' | 'voice' | 'video' = 'chat') => {
     const readyParticipants = participants.filter(p => p.isReady);
     
-    if (readyParticipants.length < 2) {
+    if (readyParticipants.length < minParticipants) {
       Alert.alert(
         'Not Enough Participants',
-        'You need at least 2 ready participants to start the discussion.',
+        `You need at least ${minParticipants} ready participants to start the discussion (current: ${readyParticipants.length}/${maxParticipants}).`,
         [{ text: 'OK' }]
       );
       return;
     }
 
     try {
-      if (mode !== 'chat') {
-        // Start voice/video session via backend
-        await groupsAPI.startSession(groupId, mode);
-      }
-      
-      // Navigate to the appropriate screen based on mode
-      if (mode === 'chat') {
-        // @ts-ignore
-        navigation.navigate('GroupChatScreen', { 
-          groupInfo, 
+      // Always start session via backend (including chat)
+      const startResponse = await groupsAPI.startSession(groupId, mode);
+    
+    // Navigate to the appropriate screen based on mode
+    if (mode === 'chat') {
+      // @ts-ignore
+      navigation.navigate('GroupChatScreen', { 
+        groupInfo, 
           participants: readyParticipants,
           groupId
-        });
-      } else if (mode === 'voice') {
-        // @ts-ignore
-        navigation.navigate('GroupVideoCallScreen', { 
-          groupInfo, 
-          participants: readyParticipants,
+      });
+    } else if (mode === 'voice') {
+      // @ts-ignore
+      navigation.navigate('GroupVideoCallScreen', { 
+        groupInfo, 
+        participants: readyParticipants,
           groupId,
           isVoiceOnly: true,
           initialAudioState: { isMuted, isSpeakerOn }
-        });
-      } else if (mode === 'video') {
-        // @ts-ignore
-        navigation.navigate('GroupVideoCallScreen', { 
-          groupInfo, 
+      });
+    } else if (mode === 'video') {
+      // @ts-ignore
+      navigation.navigate('GroupVideoCallScreen', { 
+        groupInfo, 
           participants: readyParticipants,
           groupId,
           initialAudioState: { isMuted, isSpeakerOn },
@@ -194,7 +322,7 @@ export default function GroupWaitingRoom() {
   if (loading) {
     return (
       <View style={styles.container}>
-        <LinearGradient
+        <Gradient
           colors={['rgba(220, 41, 41, 0.2)', 'rgba(255, 255, 255, 1)', 'rgba(255, 255, 255, 1)', 'rgba(34, 108, 174, 0.1)']}
           locations={[0, 0.25, 0.75, 1]}
           start={{ x: 0, y: 0 }}
@@ -213,7 +341,7 @@ export default function GroupWaitingRoom() {
   if (error) {
     return (
       <View style={styles.container}>
-        <LinearGradient
+        <Gradient
           colors={['rgba(220, 41, 41, 0.2)', 'rgba(255, 255, 255, 1)', 'rgba(255, 255, 255, 1)', 'rgba(34, 108, 174, 0.1)']}
           locations={[0, 0.25, 0.75, 1]}
           start={{ x: 0, y: 0 }}
@@ -234,11 +362,40 @@ export default function GroupWaitingRoom() {
   }
   
   const readyCount = participants.filter(p => p.isReady).length;
-  const canStart = readyCount >= 3;
+  
+  // Calculate minimum participants based on group size (same logic as backend)
+  // For groups with maxParticipants 3-5: require at least 3 participants
+  // For groups with maxParticipants 6-10: require at least 4 participants  
+  // For groups with maxParticipants 11+: require at least 5 participants
+  const maxParticipants = groupDetails?.maxParticipants || groupInfo?.maxParticipants || 5;
+  let minParticipants: number;
+  if (maxParticipants <= 5) {
+    minParticipants = 3;
+  } else if (maxParticipants <= 10) {
+    minParticipants = 4;
+  } else {
+    minParticipants = 5;
+  }
+  
+  // Ensure minimum is not more than maxParticipants
+  minParticipants = Math.min(minParticipants, maxParticipants);
+  
+  const canStart = readyCount >= minParticipants;
+  
+  // Debug info
+  console.log('🔍 FOOTER RENDER DEBUG:', {
+    isHost,
+    readyCount,
+    minParticipants,
+    maxParticipants,
+    canStart,
+    participantsCount: participants.length,
+    participants: participants.map(p => ({ name: p.name, isHost: p.isHost, isReady: p.isReady }))
+  });
   
   return (
     <View style={styles.container}>
-      <LinearGradient
+      <Gradient
         colors={['rgba(220, 41, 41, 0.2)', 'rgba(255, 255, 255, 1)', 'rgba(255, 255, 255, 1)', 'rgba(34, 108, 174, 0.1)']}
         locations={[0, 0.25, 0.75, 1]}
         start={{ x: 0, y: 0 }}
@@ -281,6 +438,7 @@ export default function GroupWaitingRoom() {
           </View>
         </ThemedView>
         
+        {isHost && (
         <ThemedView style={styles.shareCard}>
           <View style={styles.shareHeader}>
             <ThemedText style={styles.shareTitle}>Share Group Code</ThemedText>
@@ -288,9 +446,9 @@ export default function GroupWaitingRoom() {
           </View>
           
           <View style={styles.codeContainer}>
-            <ThemedText style={styles.groupCode}>
-              {groupDetails?.groupSession?.joinCode || 'Loading...'}
-            </ThemedText>
+              <ThemedText style={styles.groupCode}>
+                {groupDetails?.joinCode || 'Loading...'}
+              </ThemedText>
             <TouchableOpacity 
               style={styles.copyButton}
               onPress={handleCopyCode}
@@ -302,11 +460,12 @@ export default function GroupWaitingRoom() {
             </TouchableOpacity>
           </View>
         </ThemedView>
+        )}
         
         <ThemedView style={styles.participantsCard}>
           <View style={styles.participantsHeader}>
             <ThemedText style={styles.participantsTitle}>
-              Participants ({participants.length}/{groupDetails?.groupSession?.maxParticipants || groupInfo?.maxParticipants || 5})
+              Participants ({participants.length}/{groupDetails?.maxParticipants || groupInfo?.maxParticipants || 5})
             </ThemedText>
             <ThemedText style={styles.readyText}>
               {readyCount} ready
@@ -344,7 +503,7 @@ export default function GroupWaitingRoom() {
             ))}
             
             {/* Empty slots */}
-            {Array.from({ length: (groupDetails?.groupSession?.maxParticipants || groupInfo?.maxParticipants || 5) - participants.length }).map((_, index) => (
+            {Array.from({ length: (groupDetails?.maxParticipants || groupInfo?.maxParticipants || 5) - participants.length }).map((_, index) => (
               <View key={`empty-${index}`} style={styles.emptyParticipantItem}>
                 <View style={styles.participantInfo}>
                   <View style={styles.emptyAvatarCircle}>
@@ -357,64 +516,95 @@ export default function GroupWaitingRoom() {
           </View>
         </ThemedView>
         
-        <ThemedView style={styles.mediaControlsCard}>
-          <ThemedText style={styles.mediaControlsTitle}>Media Settings</ThemedText>
-          <View style={styles.mediaControls}>
-            <TouchableOpacity 
-              style={[styles.mediaControlButton, isMuted && styles.activeMediaControl]}
-              onPress={toggleMute}
-            >
-              <FontAwesome 
-                name={isMuted ? "microphone-slash" : "microphone"} 
-                size={20} 
-                color={isMuted ? "#FFFFFF" : "#dc2929"} 
-              />
-              <ThemedText style={[styles.mediaControlText, isMuted && styles.activeMediaControlText]}>
-                {isMuted ? "Unmute" : "Mute"}
-              </ThemedText>
-            </TouchableOpacity>
+        {isHost ? (
+          <ThemedView style={styles.mediaControlsCard}>
+            <ThemedText style={styles.mediaControlsTitle}>Media Settings (Host)</ThemedText>
+            <View style={styles.mediaControls}>
+              <TouchableOpacity 
+                style={[styles.mediaControlButton, isMuted && styles.activeMediaControl]}
+                onPress={toggleMute}
+              >
+                <FontAwesome 
+                  name={isMuted ? "microphone-slash" : "microphone"} 
+                  size={20} 
+                  color={isMuted ? "#FFFFFF" : "#dc2929"} 
+                />
+                <ThemedText style={[styles.mediaControlText, isMuted && styles.activeMediaControlText]}>
+                  {isMuted ? "Unmute" : "Mute"}
+                </ThemedText>
+              </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={[styles.mediaControlButton, !hasVideo && styles.activeMediaControl]}
-              onPress={toggleVideo}
-            >
-              <FontAwesome 
-                name={hasVideo ? "video-camera" : "video-camera"} 
-                size={20} 
-                color={hasVideo ? "#226cae" : "#FFFFFF"} 
-              />
-              {!hasVideo && <FontAwesome name="times" size={12} color="#dc2929" style={styles.disabledOverlay} />}
-              <ThemedText style={[styles.mediaControlText, !hasVideo && styles.activeMediaControlText]}>
-                {hasVideo ? "Video On" : "Video Off"}
-              </ThemedText>
-            </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.mediaControlButton, !hasVideo && styles.activeMediaControl]}
+                onPress={toggleVideo}
+              >
+                <FontAwesome 
+                  name={hasVideo ? "video-camera" : "video-camera"} 
+                  size={20} 
+                  color={hasVideo ? "#226cae" : "#FFFFFF"} 
+                />
+                {!hasVideo && <FontAwesome name="times" size={12} color="#dc2929" style={styles.disabledOverlay} />}
+                <ThemedText style={[styles.mediaControlText, !hasVideo && styles.activeMediaControlText]}>
+                  {hasVideo ? "Video On" : "Video Off"}
+                </ThemedText>
+              </TouchableOpacity>
 
-            <TouchableOpacity 
-              style={[styles.mediaControlButton, isSpeakerOn && styles.activeMediaControl]}
-              onPress={toggleSpeaker}
-            >
-              <FontAwesome 
-                name={isSpeakerOn ? "volume-up" : "volume-down"} 
-                size={20} 
-                color={isSpeakerOn ? "#4CAF50" : "#666666"} 
-              />
-              <ThemedText style={[styles.mediaControlText, isSpeakerOn && styles.activeMediaControlText]}>
-                {isSpeakerOn ? "Speaker" : "Earpiece"}
-              </ThemedText>
-            </TouchableOpacity>
-          </View>
-        </ThemedView>
+              <TouchableOpacity 
+                style={[styles.mediaControlButton, isSpeakerOn && styles.activeMediaControl]}
+                onPress={toggleSpeaker}
+              >
+                <FontAwesome 
+                  name={isSpeakerOn ? "volume-up" : "volume-down"} 
+                  size={20} 
+                  color={isSpeakerOn ? "#4CAF50" : "#666666"} 
+                />
+                <ThemedText style={[styles.mediaControlText, isSpeakerOn && styles.activeMediaControlText]}>
+                  {isSpeakerOn ? "Speaker" : "Earpiece"}
+                </ThemedText>
+              </TouchableOpacity>
+            </View>
+          </ThemedView>
+        ) : (
+          <ThemedView style={styles.mediaControlsCard}>
+            <ThemedText style={styles.mediaControlsTitle}>Audio Settings</ThemedText>
+            <View style={styles.mediaControls}>
+              <TouchableOpacity 
+                style={[styles.mediaControlButton, isSpeakerOn && styles.activeMediaControl]}
+                onPress={toggleSpeaker}
+              >
+                <FontAwesome 
+                  name={isSpeakerOn ? "volume-up" : "volume-down"} 
+                  size={20} 
+                  color={isSpeakerOn ? "#4CAF50" : "#666666"} 
+                />
+                <ThemedText style={[styles.mediaControlText, isSpeakerOn && styles.activeMediaControlText]}>
+                  {isSpeakerOn ? "Speaker" : "Earpiece"}
+                </ThemedText>
+              </TouchableOpacity>
+            </View>
+          </ThemedView>
+        )}
 
+        {isHost ? (
         <View style={styles.infoCard}>
           <FontAwesome name="info-circle" size={20} color="#dc2929" style={styles.infoIcon} />
-          <ThemedText style={styles.infoText}>
-            As the host, you can start the discussion when at least 3 participants (including you) are ready.
-          </ThemedText>
+            <ThemedText style={styles.infoText}>
+              As the host, you can start the discussion when at least {minParticipants} participants (including you) are ready. Ready: {readyCount}/{participants.length}
+            </ThemedText>
         </View>
+        ) : (
+          <View style={styles.infoCard}>
+            <FontAwesome name="info-circle" size={20} color="#226cae" style={styles.infoIcon} />
+            <ThemedText style={styles.infoText}>
+              Waiting for the host to start the discussion. You can adjust your audio settings below.
+            </ThemedText>
+          </View>
+        )}
       </ScrollView>
       
       <View style={styles.footer}>
-        {canStart ? (
+        {isHost ? (
+          canStart ? (
           <View style={styles.communicationOptions}>
             <ThemedText style={styles.communicationTitle}>Choose Communication Method:</ThemedText>
             <View style={styles.communicationButtons}>
@@ -427,21 +617,22 @@ export default function GroupWaitingRoom() {
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.communicationButton, styles.voiceButton]}
-                onPress={() => handleStartDiscussion('voice')}
+                style={[styles.communicationButton, styles.voiceButton, styles.disabledOption]}
+                disabled
               >
                 <FontAwesome name="phone" size={20} color="#FFFFFF" />
                 <ThemedText style={styles.communicationButtonText}>Voice</ThemedText>
               </TouchableOpacity>
               
               <TouchableOpacity 
-                style={[styles.communicationButton, styles.videoButton]}
-                onPress={() => handleStartDiscussion('video')}
+                style={[styles.communicationButton, styles.videoButton, styles.disabledOption]}
+                disabled
               >
                 <FontAwesome name="video-camera" size={20} color="#FFFFFF" />
                 <ThemedText style={styles.communicationButtonText}>Video</ThemedText>
               </TouchableOpacity>
             </View>
+            <ThemedText style={styles.comingSoonText}>Voice and Video calls coming soon</ThemedText>
           </View>
         ) : (
           <TouchableOpacity 
@@ -449,9 +640,59 @@ export default function GroupWaitingRoom() {
             disabled={true}
           >
             <ThemedText style={styles.startButtonText}>
-              Need {3 - readyCount} more ready
+                Need {minParticipants - readyCount} more ready
             </ThemedText>
           </TouchableOpacity>
+          )
+        ) : (
+          groupDetails?.status === 'active' && groupDetails?.groupSession?.isActive ? (
+            <TouchableOpacity 
+              style={[styles.startButton, styles.joinSessionButton]}
+              onPress={() => {
+                const sessionType = groupDetails.groupSession.sessionType;
+                const readyParticipants = participants.filter(p => p.isReady);
+                
+                if (sessionType === 'chat') {
+                  // @ts-ignore
+                  navigation.navigate('GroupChatScreen', { 
+                    groupInfo, 
+                    participants: readyParticipants,
+                    groupId
+                  });
+                } else if (sessionType === 'voice') {
+                  // @ts-ignore
+                  navigation.navigate('GroupVideoCallScreen', { 
+                    groupInfo, 
+                    participants: readyParticipants,
+                    groupId,
+                    isVoiceOnly: true,
+                    initialAudioState: { isMuted, isSpeakerOn }
+                  });
+                } else if (sessionType === 'video') {
+                  // @ts-ignore
+                  navigation.navigate('GroupVideoCallScreen', { 
+                    groupInfo, 
+                    participants: readyParticipants,
+                    groupId,
+                    initialAudioState: { isMuted, isSpeakerOn },
+                    initialVideoState: { hasVideo }
+                  });
+                }
+              }}
+            >
+              <FontAwesome name="play" size={20} color="#FFFFFF" />
+              <ThemedText style={styles.startButtonText}>
+                Join Session ({groupDetails.groupSession.sessionType})
+              </ThemedText>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.waitingFooter}>
+              <FontAwesome name="clock-o" size={24} color="#226cae" />
+              <ThemedText style={styles.waitingText}>
+                Waiting for host to start the discussion...
+              </ThemedText>
+            </View>
+          )
         )}
       </View>
       </FeatureAccessWrapper>
@@ -557,17 +798,18 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   beginnerBadge: {
-    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+    backgroundColor: '#4CAF50',
   },
   intermediateBadge: {
-    backgroundColor: 'rgba(255, 193, 7, 0.1)',
+    backgroundColor: '#FFC107',
   },
   advancedBadge: {
-    backgroundColor: 'rgba(220, 41, 41, 0.1)',
+    backgroundColor: '#DC2929',
   },
   levelText: {
     fontSize: 12,
     fontWeight: '500',
+    color: '#FFFFFF',
   },
   privateBadge: {
     flexDirection: 'row',
@@ -826,6 +1068,9 @@ const styles = StyleSheet.create({
   disabledButton: {
     backgroundColor: '#CCCCCC',
   },
+  joinSessionButton: {
+    backgroundColor: '#4CAF50',
+  },
   startButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
@@ -873,6 +1118,15 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '600',
+  },
+  disabledOption: {
+    opacity: 0.5,
+  },
+  comingSoonText: {
+    marginTop: 8,
+    textAlign: 'center',
+    color: '#666666',
+    fontSize: 12,
   },
   mediaControlsCard: {
     backgroundColor: '#FFFFFF',
@@ -929,5 +1183,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 6,
     padding: 2,
+  },
+  waitingFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    backgroundColor: 'rgba(34, 108, 174, 0.1)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 108, 174, 0.2)',
+  },
+  waitingText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#226cae',
+    marginLeft: 12,
   },
 }); 

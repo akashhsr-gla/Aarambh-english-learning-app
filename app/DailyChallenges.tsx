@@ -9,7 +9,7 @@ import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
 import FeatureAccessWrapper from './components/FeatureAccessWrapper';
 import { useFeatureAccess } from './hooks/useFeatureAccess';
-import { gamesAPI } from './services/api';
+import { gamesAPI, sessionsAPI } from './services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -163,8 +163,24 @@ export default function DailyChallenges() {
     }
   };
 
-  const startDailyChallenge = () => {
+  const startDailyChallenge = async () => {
     if (dailyChallenge) {
+      // Save daily challenge session
+      try {
+        await sessionsAPI.createOrUpdateGameSession({
+          gameId: dailyChallenge.game._id,
+          gameType: dailyChallenge.gameType,
+          difficulty: dailyChallenge.game.difficulty || 'medium',
+          currentQuestionIndex: 0,
+          timeLeft: dailyChallenge.game.timeLimit || 300,
+          answers: [],
+          score: 0,
+          totalQuestions: 1 // Daily challenge is one question
+        });
+      } catch (error) {
+        console.error('Error saving daily challenge session:', error);
+      }
+      
       navigation.navigate('GameScreen', { 
         gameType: dailyChallenge.gameType 
       });

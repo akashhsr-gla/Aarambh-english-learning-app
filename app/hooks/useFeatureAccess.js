@@ -13,13 +13,11 @@ export const useFeatureAccess = (featureKey) => {
       setIsLoading(true);
       setError(null);
 
-      // Load features if not already loaded
-      if (!featureService.isLoaded) {
-        const loaded = await featureService.loadFeatures();
-        if (!loaded) {
-          setError('Failed to load features');
-          return;
-        }
+      // Always refresh features to get latest data
+      const loaded = await featureService.refreshFeatures();
+      if (!loaded) {
+        setError('Failed to load features');
+        return;
       }
 
       // Check access
