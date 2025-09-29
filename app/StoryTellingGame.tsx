@@ -526,7 +526,16 @@ export default function StoryTellingGame() {
             <View style={[styles.progressFill, { width: `${((currentStoryIndex + 1) / storyPrompts.length) * 100}%` }]} />
           </View>
           
-          <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
+          <ScrollView 
+            style={styles.scrollContainer}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            removeClippedSubviews
+            scrollEventThrottle={16}
+            showsVerticalScrollIndicator={false}
+            overScrollMode="never"
+            decelerationRate="fast"
+          >
             <View style={styles.storyHeader}>
               <ThemedText style={styles.storyTitle}>{currentStory.title}</ThemedText>
               <View style={styles.difficultyBadge}>

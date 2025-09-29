@@ -18,11 +18,11 @@ export function Collapsible({ children, title }: PropsWithChildren & { title: st
         onPress={() => setIsOpen((value) => !value)}
         activeOpacity={0.8}>
         <IconSymbol
-          name="chevron.right"
+          name="person.crop.circle" // bot-like/person icon
           size={18}
-          weight="medium"
+          weight="regular"
           color={theme === 'light' ? Colors.light.icon : Colors.dark.icon}
-          style={{ transform: [{ rotate: isOpen ? '90deg' : '0deg' }] }}
+          style={{ opacity: 0.9 }}
         />
 
         <ThemedText type="defaultSemiBold">{title}</ThemedText>

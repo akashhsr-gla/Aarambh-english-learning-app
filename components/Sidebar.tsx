@@ -1,7 +1,7 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Dimensions, Modal, Platform, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { authAPI } from '../app/services/api';
 import { ThemedText } from './ThemedText';
@@ -15,12 +15,13 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 const SIDEBAR_WIDTH = SCREEN_WIDTH * 0.8;
 const STATUS_BAR_HEIGHT = Platform.OS === 'ios' ? 44 : StatusBar.currentHeight || 0;
 
-export default function Sidebar({ visible, onClose }: SidebarProps) {
+function Sidebar({ visible, onClose }: SidebarProps) {
   const slideAnim = useRef(new Animated.Value(SIDEBAR_WIDTH)).current;
   const navigation = useNavigation();
   const [user, setUser] = useState<any>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
+  const hasLoadedRef = useRef(false);
 
   useEffect(() => {
     if (visible) {
@@ -41,12 +42,17 @@ export default function Sidebar({ visible, onClose }: SidebarProps) {
     }
   }, [visible, slideAnim]);
 
-  const loadUserData = async () => {
+  const loadUserData = useCallback(async () => {
     try {
       setLoading(true);
+      if (hasLoadedRef.current && user) {
+        // Skip reloading if we already have user data
+        return;
+      }
       const userData = await authAPI.getCurrentUser();
       setUser(userData.data.user);
       setIsAuthenticated(true);
+      hasLoadedRef.current = true;
     } catch (error) {
       console.log('User not authenticated');
       setIsAuthenticated(false);
@@ -54,9 +60,9 @@ export default function Sidebar({ visible, onClose }: SidebarProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
 
-  const animateOutAndClose = () => {
+  const animateOutAndClose = useCallback(() => {
     Animated.timing(slideAnim, {
       toValue: SIDEBAR_WIDTH,
       duration: 250,
@@ -64,9 +70,9 @@ export default function Sidebar({ visible, onClose }: SidebarProps) {
     }).start(() => {
       onClose();
     });
-  };
+  }, [onClose, slideAnim]);
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     try {
       await authAPI.logout();
       setUser(null);
@@ -77,18 +83,23 @@ export default function Sidebar({ visible, onClose }: SidebarProps) {
     } catch (error) {
       console.error('Logout error:', error);
     }
-  };
+  }, [navigation, onClose]);
 
-  const navigateToScreen = (screenName: string) => {
+  const navigateToScreen = useCallback((screenName: string) => {
     onClose();
     if (screenName === 'home') {
       // Use expo-router to ensure navigating to tabs root
       router.push('/(tabs)');
       return;
     }
+    if (screenName === 'help') {
+      // Route into the Help tab
+      router.push('/(tabs)/help');
+      return;
+    }
     // @ts-ignore
     navigation.navigate(screenName);
-  };
+  }, [navigation, onClose]);
 
   if (!visible) return null;
 
@@ -201,7 +212,10 @@ export default function Sidebar({ visible, onClose }: SidebarProps) {
                 <ThemedText style={styles.menuText}>Privacy Policy</ThemedText>
               </TouchableOpacity>
 
-                <TouchableOpacity style={styles.menuItem}>
+                <TouchableOpacity 
+                  style={styles.menuItem}
+                  onPress={() => navigateToScreen('help')}
+                >
                   <FontAwesome name="question-circle" size={24} color="#226cae" style={styles.menuIcon} />
                   <ThemedText style={styles.menuText}>Help</ThemedText>
                 </TouchableOpacity>
@@ -232,7 +246,10 @@ export default function Sidebar({ visible, onClose }: SidebarProps) {
                   <ThemedText style={styles.menuText}>Sign In</ThemedText>
                 </TouchableOpacity>
 
-                <TouchableOpacity style={styles.menuItem}>
+                <TouchableOpacity 
+                  style={styles.menuItem}
+                  onPress={() => navigateToScreen('help')}
+                >
                   <FontAwesome name="question-circle" size={24} color="#226cae" style={styles.menuIcon} />
                   <ThemedText style={styles.menuText}>Help</ThemedText>
                 </TouchableOpacity>
@@ -257,6 +274,8 @@ export default function Sidebar({ visible, onClose }: SidebarProps) {
     </Modal>
   );
 }
+
+export default memo(Sidebar);
 
 const styles = StyleSheet.create({
   overlay: {

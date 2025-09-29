@@ -1,7 +1,7 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { HapticTab } from '@/components/HapticTab';
 import TabBarBackground from '@/components/ui/TabBarBackground';
@@ -31,12 +31,11 @@ export default function TabLayout() {
         tabBarButton: HapticTab,
         tabBarBackground: TabBarBackground,
         tabBarStyle: {
-          ...Platform.select({
-            ios: {
-              position: 'absolute',
-            },
-            default: {},
-          }),
+          position: 'absolute',
+          bottom: 16,
+          left: 16,
+          right: 16,
+          borderRadius: 16,
           backgroundColor: 'white',
           shadowColor: '#000',
           shadowOffset: { width: 0, height: -2 },

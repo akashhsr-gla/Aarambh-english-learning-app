@@ -582,7 +582,7 @@ export default function ChatScreen() {
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 30}
     >
       <View style={styles.gradientBackground} />
       
@@ -603,14 +603,8 @@ export default function ChatScreen() {
             </View>
           </View>
           
-          <View style={styles.chatActions}>
-            <TouchableOpacity style={styles.actionButton} onPress={() => handleCallPress('voice')}>
-              <FontAwesome name="phone" size={18} color="#226cae" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton} onPress={() => handleCallPress('video')}>
-              <FontAwesome name="video-camera" size={18} color="#226cae" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.endSessionButton} onPress={handleEndSession}>
+        <View style={styles.chatActions}>
+          <TouchableOpacity style={styles.endSessionButton} onPress={handleEndSession}>
               <FontAwesome name="times" size={18} color="#dc2929" />
             </TouchableOpacity>
           </View>
@@ -834,6 +828,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: 'rgba(0, 0, 0, 0.05)',
     backgroundColor: '#FFFFFF',
+    marginBottom: 16,
   },
   attachButton: {
     width: 40,

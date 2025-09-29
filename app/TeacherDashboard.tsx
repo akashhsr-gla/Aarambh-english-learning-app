@@ -1,5 +1,6 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
@@ -467,7 +468,22 @@ export default function TeacherDashboard() {
             <ThemedText style={styles.referralCode}>
               {showReferralCode ? teacherData.referralCode : "••••••••"}
             </ThemedText>
-            <TouchableOpacity style={styles.copyButton}>
+            <TouchableOpacity 
+              style={styles.copyButton}
+              onPress={async () => {
+                try {
+                  const code = teacherData.referralCode || '';
+                  if (!code) {
+                    Alert.alert('Copy Failed', 'No referral code available to copy.');
+                    return;
+                  }
+                  await Clipboard.setStringAsync(code);
+                  Alert.alert('Copied', 'Referral code copied to clipboard.');
+                } catch (e) {
+                  Alert.alert('Copy Failed', 'Unable to copy the code. Please try again.');
+                }
+              }}
+            >
               <FontAwesome name="copy" size={20} color="#226cae" />
             </TouchableOpacity>
           </View>

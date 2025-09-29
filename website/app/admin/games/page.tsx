@@ -60,18 +60,18 @@ interface Game {
 }
 
 interface GameFormData {
-  title: string;
-  description: string;
-  gameType: 'grammar' | 'pronunciation' | 'identification' | 'storytelling';
-  difficulty: 'beginner' | 'intermediate' | 'advanced';
-  level: number;
-  timeLimit: number;
-  maxScore: number;
-  passingScore: number;
+    title: string;
+    description: string;
+    gameType: 'grammar' | 'pronunciation' | 'identification' | 'storytelling';
+    difficulty: 'beginner' | 'intermediate' | 'advanced';
+    level: number;
+    timeLimit: number;
+    maxScore: number;
+    passingScore: number;
   totalQuestions: number;
   questions: GameQuestion[];
-  isPremium: boolean;
-  requiresSubscription: boolean;
+    isPremium: boolean;
+    requiresSubscription: boolean;
   categories: string[];
   tags: string[];
 }
@@ -118,6 +118,26 @@ export default function GameManagement() {
     tags: []
   });
 
+  const resetForm = () => {
+    setFormData({
+      title: '',
+      description: '',
+      gameType: 'grammar',
+      difficulty: 'beginner',
+      level: 1,
+      timeLimit: 300,
+      maxScore: 100,
+      passingScore: 70,
+      totalQuestions: 0,
+      questions: [],
+      isPremium: false,
+      requiresSubscription: false,
+      categories: [],
+      tags: []
+    });
+    setSelectedGame(null);
+  };
+
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://aarambh-english-learning-app-1.onrender.com';
 
   useEffect(() => {
@@ -128,7 +148,7 @@ export default function GameManagement() {
     return localStorage.getItem('adminToken');
   };
 
-  const fetchGames = async () => {
+    const fetchGames = async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams({
@@ -140,7 +160,7 @@ export default function GameManagement() {
       });
 
       const response = await fetch(`${backendUrl}/games?${params}`, {
-        headers: {
+          headers: {
           'Authorization': `Bearer ${getToken()}`,
           'Content-Type': 'application/json'
         }
@@ -156,10 +176,10 @@ export default function GameManagement() {
       setTotalGames(data.data.pagination.total);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch games');
-    } finally {
-      setLoading(false);
-    }
-  };
+      } finally {
+        setLoading(false);
+      }
+    };
 
   const createGame = async (gameData: GameFormData) => {
     try {
@@ -352,7 +372,7 @@ export default function GameManagement() {
           <div className="divide-y divide-gray-200">
             {games.map((game) => (
               <div key={game._id} className="p-6 hover:bg-gray-50">
-                <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between">
                   <div className="flex-1">
                     <div className="flex items-center space-x-3 mb-2">
                       <h3 className="text-lg font-medium text-gray-900">{game.title}</h3>
@@ -370,7 +390,7 @@ export default function GameManagement() {
                         'bg-red-100 text-red-800'
                       }`}>
                         {game.difficulty}
-                      </span>
+                    </span>
                     </div>
                     <p className="text-gray-600 text-sm mb-2">{game.description}</p>
                     <div className="flex items-center space-x-4 text-sm text-gray-500">
@@ -497,20 +517,20 @@ export default function GameManagement() {
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
-              </div>
+      </div>
 
               <div className="flex justify-end space-x-3">
-                <button
+            <button
                   type="button"
                   onClick={() => {
                     setShowCreateModal(false);
                     setShowEditModal(false);
                   }}
                   className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
+              >
+                Cancel
+              </button>
+              <button
                   type="button"
                   onClick={() => {
                     if (showEditModal && selectedGame) {
@@ -522,8 +542,8 @@ export default function GameManagement() {
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg"
                 >
                   {showEditModal ? 'Update' : 'Create'}
-                </button>
-              </div>
+              </button>
+            </div>
             </form>
           </div>
         </div>
@@ -535,13 +555,13 @@ export default function GameManagement() {
           <div className="relative top-20 mx-auto p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white">
             <h3 className="text-lg font-medium text-gray-900 mb-4">Game Details</h3>
             
-            <div className="space-y-4">
+              <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
-                <div>
+                  <div>
                   <label className="block text-sm font-medium text-gray-700">Title</label>
                   <p className="text-sm text-gray-900">{selectedGame.title}</p>
-                </div>
-                <div>
+                  </div>
+                  <div>
                   <label className="block text-sm font-medium text-gray-700">Type</label>
                   <p className="text-sm text-gray-900">{selectedGame.gameType}</p>
                 </div>
@@ -553,14 +573,14 @@ export default function GameManagement() {
                   <label className="block text-sm font-medium text-gray-700">Level</label>
                   <p className="text-sm text-gray-900">{selectedGame.level}</p>
                 </div>
-              </div>
+                      </div>
 
-              <div>
+                        <div>
                 <label className="block text-sm font-medium text-gray-700">Description</label>
                 <p className="text-sm text-gray-900">{selectedGame.description}</p>
-              </div>
+                        </div>
 
-              <div>
+                        <div>
                 <label className="block text-sm font-medium text-gray-700">Questions ({selectedGame.questions.length})</label>
                 <div className="max-h-40 overflow-y-auto space-y-2">
                   {selectedGame.questions.map((q, i) => (
@@ -569,7 +589,7 @@ export default function GameManagement() {
                     </div>
                   ))}
                 </div>
-              </div>
+                </div>
 
               <div className="flex justify-end">
                 <button

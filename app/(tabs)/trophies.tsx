@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
+import ChatButton from '@/components/ChatButton';
 import Header from '@/components/Header';
 import { ThemedText } from '@/components/ThemedText';
 import { ThemedView } from '@/components/ThemedView';
@@ -191,6 +192,7 @@ export default function TrophiesScreen() {
   }
 
   return (
+    <>
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
       <LinearGradient
         colors={['rgba(220, 41, 41, 0.15)', 'rgba(255, 255, 255, 1)', 'rgba(255, 255, 255, 1)', 'rgba(34, 108, 174, 0.15)']}
@@ -320,6 +322,8 @@ export default function TrophiesScreen() {
         </TouchableOpacity>
       </ThemedView>
     </ScrollView>
+    <ChatButton />
+    </>
   );
 }
 

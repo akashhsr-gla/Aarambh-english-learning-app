@@ -428,7 +428,7 @@ export default function UserManagement() {
             </select>
           </div>
           <div className="flex items-end">
-            <button
+                <button 
               onClick={() => {
                 setFilters({ role: '', status: '', search: '' });
                 setCurrentPage(1);
@@ -436,9 +436,9 @@ export default function UserManagement() {
               className="w-full px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
             >
               Clear Filters
-            </button>
-          </div>
-        </div>
+                </button>
+              </div>
+            </div>
       </div>
 
       {/* Users Table */}
@@ -458,44 +458,44 @@ export default function UserManagement() {
             <p className="text-gray-500">No users found</p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    User
-                  </th>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  User
+                </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Role
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Region
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Created
-                  </th>
+                </th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
                 {users.map((user) => (
                   <tr key={user._id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
+                  <td className="px-6 py-4 whitespace-nowrap">
                       <div>
                         <div className="text-sm font-medium text-gray-900">{user.name}</div>
                         <div className="text-sm text-gray-500">{user.email}</div>
                         {user.phone && (
                           <div className="text-xs text-gray-400">{user.phone}</div>
                         )}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                         user.role === 'admin' 
                           ? 'bg-red-100 text-red-800'
                           : user.role === 'teacher'
@@ -503,12 +503,12 @@ export default function UserManagement() {
                           : 'bg-green-100 text-green-800'
                       }`}>
                         {user.role}
-                      </span>
-                    </td>
+                    </span>
+                  </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {user.region ? `${user.region.name} (${user.region.code})` : 'No Region'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center space-x-2">
                         {user.isActive ? (
                           <UserCheck className="w-4 h-4 text-green-500" />
@@ -518,11 +518,11 @@ export default function UserManagement() {
                         <span className={`text-sm ${user.isActive ? 'text-green-600' : 'text-red-600'}`}>
                           {user.isActive ? 'Active' : 'Inactive'}
                         </span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                       {formatDate(user.createdAt)}
-                    </td>
+                  </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                       <div className="flex items-center justify-end space-x-2">
                         <button
@@ -530,26 +530,26 @@ export default function UserManagement() {
                           className="text-blue-600 hover:text-blue-900"
                         >
                           <Eye className="w-4 h-4" />
-                        </button>
-                        <button
+                      </button>
+                      <button 
                           onClick={() => openEditModal(user)}
                           className="text-yellow-600 hover:text-yellow-900"
-                        >
+                      >
                           <Edit className="w-4 h-4" />
-                        </button>
-                        <button
+                      </button>
+                      <button 
                           onClick={() => deleteUser(user._id)}
-                          className="text-red-600 hover:text-red-900"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                        className="text-red-600 hover:text-red-900"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
         )}
 
         {/* Pagination */}
@@ -573,13 +573,13 @@ export default function UserManagement() {
                 </button>
               </div>
               <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-                <div>
+              <div>
                   <p className="text-sm text-gray-700">
                     Showing page <span className="font-medium">{currentPage}</span> of{' '}
                     <span className="font-medium">{totalPages}</span>
                   </p>
-                </div>
-                <div>
+              </div>
+              <div>
                   <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
                     <button
                       onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
@@ -636,7 +636,7 @@ export default function UserManagement() {
                     />
                   </div>
                   
-                  <div>
+              <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
                     <input
                       type="tel"
@@ -644,9 +644,9 @@ export default function UserManagement() {
                       onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     />
-                  </div>
+              </div>
 
-                  <div>
+              <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
                     <select
                       required
@@ -657,11 +657,11 @@ export default function UserManagement() {
                       <option value="student">Student</option>
                       <option value="teacher">Teacher</option>
                       <option value="admin">Admin</option>
-                    </select>
-                  </div>
+                </select>
+              </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Region</label>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Region</label>
                     <select
                       value={formData.region}
                       onChange={(e) => setFormData({ ...formData, region: e.target.value })}
@@ -672,9 +672,9 @@ export default function UserManagement() {
                         <option key={region._id} value={region._id}>
                           {region.name} ({region.code})
                         </option>
-                      ))}
-                    </select>
-                  </div>
+                  ))}
+                </select>
+              </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -796,7 +796,7 @@ export default function UserManagement() {
                   >
                     {showEditModal ? 'Update' : 'Create'}
                   </button>
-                </div>
+            </div>
               </form>
             </div>
           </div>
@@ -823,30 +823,30 @@ export default function UserManagement() {
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Phone</label>
                     <p className="text-sm text-gray-900">{selectedUser.phone || 'Not provided'}</p>
-                  </div>
-                  <div>
+            </div>
+                <div>
                     <label className="block text-sm font-medium text-gray-700">Role</label>
                     <p className="text-sm text-gray-900">{selectedUser.role}</p>
-                  </div>
-                  <div>
+                </div>
+                <div>
                     <label className="block text-sm font-medium text-gray-700">Region</label>
                     <p className="text-sm text-gray-900">
                       {selectedUser.region ? `${selectedUser.region.name} (${selectedUser.region.code})` : 'No Region'}
                     </p>
-                  </div>
-                  <div>
+                </div>
+                <div>
                     <label className="block text-sm font-medium text-gray-700">Status</label>
                     <p className={`text-sm ${selectedUser.isActive ? 'text-green-600' : 'text-red-600'}`}>
                       {selectedUser.isActive ? 'Active' : 'Inactive'}
                     </p>
-                  </div>
-                  <div>
+                </div>
+                <div>
                     <label className="block text-sm font-medium text-gray-700">Email Verified</label>
                     <p className={`text-sm ${selectedUser.isEmailVerified ? 'text-green-600' : 'text-red-600'}`}>
                       {selectedUser.isEmailVerified ? 'Yes' : 'No'}
                     </p>
-                  </div>
-                  <div>
+                </div>
+                <div>
                     <label className="block text-sm font-medium text-gray-700">Created</label>
                     <p className="text-sm text-gray-900">{formatDate(selectedUser.createdAt)}</p>
                   </div>
@@ -923,9 +923,9 @@ export default function UserManagement() {
                           )}
                         </div>
                       </div>
-                    </div>
-                  </div>
-                )}
+                </div>
+              </div>
+            )}
               </div>
 
               <div className="flex justify-end pt-4">

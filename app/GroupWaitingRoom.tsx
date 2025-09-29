@@ -1,5 +1,6 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
@@ -224,9 +225,19 @@ export default function GroupWaitingRoom() {
     return () => clearInterval(interval);
   }, [groupId]);
   
-  const handleCopyCode = () => {
-    setIsGroupCodeCopied(true);
-    setTimeout(() => setIsGroupCodeCopied(false), 2000);
+  const handleCopyCode = async () => {
+    try {
+      const code = groupDetails?.joinCode || '';
+      if (!code) {
+        Alert.alert('Copy Failed', 'No group code available to copy.');
+        return;
+      }
+      await Clipboard.setStringAsync(code);
+      setIsGroupCodeCopied(true);
+      setTimeout(() => setIsGroupCodeCopied(false), 2000);
+    } catch (e) {
+      Alert.alert('Copy Failed', 'Unable to copy the code. Please try again.');
+    }
   };
   
   const handleStartDiscussion = async (mode: 'chat' | 'voice' | 'video' = 'chat') => {

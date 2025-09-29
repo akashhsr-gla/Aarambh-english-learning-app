@@ -2,6 +2,7 @@ import { FontAwesome } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Linking, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
+import ChatButton from '@/components/ChatButton';
 import { Collapsible } from '@/components/Collapsible';
 import Header from '@/components/Header';
 import { ThemedText } from '@/components/ThemedText';
@@ -371,6 +372,7 @@ export default function HelpScreen() {
           </ThemedText>
         </ThemedView>
       </ScrollView>
+      <ChatButton />
     </View>
   );
 }

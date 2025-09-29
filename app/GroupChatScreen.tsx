@@ -432,17 +432,6 @@ export default function GroupChatScreen() {
         style={styles.container}
         navigation={navigation}
       >
-      {/* Participants Button */}
-      <View style={styles.participantsButtonContainer}>
-        <TouchableOpacity 
-          style={styles.participantsButton}
-          onPress={() => setShowParticipants(!showParticipants)}
-        >
-          <FontAwesome name="users" size={18} color="#FFFFFF" />
-          <ThemedText style={styles.participantsCount}>{participants.length}</ThemedText>
-        </TouchableOpacity>
-      </View>
-      
       {/* Group Info Header */}
       <ThemedView style={styles.groupInfoHeader}>
         <View style={styles.groupInfoContent}>
@@ -466,6 +455,14 @@ export default function GroupChatScreen() {
       
         
         <View style={styles.actionButtons}>
+          {/* Live group indicator - toggles participants (placed left of action button) */}
+          <TouchableOpacity 
+            style={styles.participantsButton}
+            onPress={() => setShowParticipants(!showParticipants)}
+          >
+            <FontAwesome name="users" size={18} color="#FFFFFF" />
+            <ThemedText style={styles.participantsCount}>{participants.length}</ThemedText>
+          </TouchableOpacity>
           {isHost ? (
             <TouchableOpacity 
               style={[styles.actionButton, styles.closeButton]}
@@ -492,7 +489,7 @@ export default function GroupChatScreen() {
       <KeyboardAvoidingView 
         style={styles.messagesContainer}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 110 : 30}
       >
         <ScrollView
           ref={scrollViewRef}
@@ -834,6 +831,7 @@ const styles = StyleSheet.create({
     borderTopColor: '#F0F0F0',
     paddingHorizontal: 16,
     paddingVertical: 12,
+    marginBottom: 16,
   },
   messageInputWrapper: {
     flexDirection: 'row',

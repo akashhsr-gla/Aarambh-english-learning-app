@@ -186,7 +186,16 @@ export default function GroupCreationScreen() {
         style={styles.container}
         navigation={navigation}
       >
-        <ScrollView style={styles.contentContainer} contentContainerStyle={styles.scrollContent}>
+        <ScrollView 
+          style={styles.contentContainer} 
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          removeClippedSubviews
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator={false}
+          overScrollMode="never"
+          decelerationRate="fast"
+        >
           <ThemedView style={styles.formCard}>
           <ThemedText style={styles.sectionTitle}>Group Information</ThemedText>
           

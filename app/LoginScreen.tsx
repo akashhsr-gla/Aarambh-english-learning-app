@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import React, { useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, Dimensions, KeyboardAvoidingView, Linking, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { ThemedText } from '../components/ThemedText';
 import { authAPI, regionsAPI } from './services/api';
@@ -238,6 +238,18 @@ export default function LoginScreen() {
     setIsRegionDropdownOpen(false);
   };
 
+  const handleForgotPasswordPress = () => {
+    Alert.alert(
+      'Password Reset',
+      'Please contact support from your registered email or phone number.\n\nEmail: aarambhoffficial@gmail.com\nPhone: +91 6204 111 878',
+      [
+        { text: 'Email', onPress: () => Linking.openURL('mailto:aarambhoffficial@gmail.com') },
+        { text: 'Call', onPress: () => Linking.openURL('tel:+916204111878') },
+        { text: 'Close', style: 'cancel' },
+      ]
+    );
+  };
+
   const toggleRegionDropdown = () => {
     setIsRegionDropdownOpen(!isRegionDropdownOpen);
   };
@@ -449,7 +461,7 @@ export default function LoginScreen() {
             </View>
             
             {isLogin && (
-              <TouchableOpacity style={styles.forgotPasswordButton}>
+              <TouchableOpacity style={styles.forgotPasswordButton} onPress={handleForgotPasswordPress}>
                 <ThemedText style={styles.forgotPasswordText}>Forgot Password?</ThemedText>
               </TouchableOpacity>
             )}

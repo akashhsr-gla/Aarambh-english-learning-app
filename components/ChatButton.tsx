@@ -1,7 +1,7 @@
-import { FontAwesome } from '@expo/vector-icons';
+import { FontAwesome, FontAwesome5 } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, Keyboard, PanResponder, Platform, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { authAPI, chatAPI } from '../app/services/api';
 import { ThemedText } from './ThemedText';
@@ -39,6 +39,41 @@ export default function ChatButton({ expandable = true, navigateOnClick = false 
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const scrollViewRef = useRef<ScrollView>(null);
   const navigation = useNavigation();
+  const windowDims = Dimensions.get('window');
+  const centerBottom = Math.max(10, windowDims.height / 2 - 30);
+  // Default: vertically centered, aligned to right edge
+  const [buttonPosition, setButtonPosition] = useState({ right: 20, bottom: centerBottom });
+  const dragStartRef = useRef({ right: 20, bottom: centerBottom });
+  const keyboardOffsetRef = useRef(0);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  // Pan responder for draggable chat button
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        // Capture starting position for this drag
+        dragStartRef.current = { right: buttonPosition.right, bottom: buttonPosition.bottom };
+      },
+      onPanResponderMove: (_, gesture) => {
+        const screenW = Dimensions.get('window').width;
+        const screenH = Dimensions.get('window').height;
+        const newRightRaw = dragStartRef.current.right - gesture.dx;
+        const newBottomRaw = dragStartRef.current.bottom - gesture.dy;
+        const newRight = Math.max(0, Math.min(screenW - 60, newRightRaw));
+        const newBottom = Math.max(0 + keyboardOffsetRef.current, Math.min(screenH - 60, newBottomRaw));
+        setButtonPosition({ right: newRight, bottom: newBottom });
+      },
+      onPanResponderRelease: () => {
+        const screenW = Dimensions.get('window').width;
+        const screenH = Dimensions.get('window').height;
+        setButtonPosition(prev => ({ 
+          right: Math.max(0, Math.min(prev.right, screenW - 60)), 
+          bottom: Math.max(0 + keyboardOffsetRef.current, Math.min(prev.bottom, screenH - 60))
+        }));
+      },
+    })
+  ).current;
 
   // Check authentication status on mount
   useEffect(() => {
@@ -51,6 +86,23 @@ export default function ChatButton({ expandable = true, navigateOnClick = false 
       loadSuggestions();
     }
   }, [isAuthenticated]);
+
+  // Keyboard listeners to lift button/panel
+  useEffect(() => {
+    const showSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', (e: any) => {
+      const lift = Math.min(180, e?.endCoordinates?.height || 0);
+      keyboardOffsetRef.current = lift;
+      setKeyboardVisible(true);
+      setButtonPosition(prev => ({ ...prev, bottom: prev.bottom + lift }));
+    });
+    const hideSub = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => {
+      setKeyboardVisible(false);
+      const lift = keyboardOffsetRef.current;
+      keyboardOffsetRef.current = 0;
+      setButtonPosition(prev => ({ ...prev, bottom: Math.max(20, prev.bottom - lift) }));
+    });
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
 
   // Initialize conversation when chat is first expanded and user is authenticated
   useEffect(() => {
@@ -317,9 +369,19 @@ export default function ChatButton({ expandable = true, navigateOnClick = false 
           </View>
         </View>
       ) : (
-        <TouchableOpacity style={styles.chatButton} onPress={toggleChat}>
-          <FontAwesome name="code" size={24} color="#FFFFFF" />
-        </TouchableOpacity>
+        <View
+          style={[
+            styles.chatButton,
+            { right: buttonPosition.right, bottom: buttonPosition.bottom },
+          ]}
+          {...(expandable ? panResponder.panHandlers : {})}
+        >
+          <TouchableOpacity onPress={toggleChat} activeOpacity={0.85}>
+            <View style={styles.botIconBubble}>
+              <FontAwesome5 name="robot" size={26} color="#FFFFFF" />
+            </View>
+          </TouchableOpacity>
+        </View>
       )}
     </>
   );
@@ -329,8 +391,6 @@ const styles = StyleSheet.create({
   // Sticky Chat Button
   chatButton: {
     position: 'absolute',
-    bottom: 20,
-    right: 20,
     width: 60,
     height: 60,
     borderRadius: 30,
@@ -343,6 +403,13 @@ const styles = StyleSheet.create({
     shadowRadius: 5,
     elevation: 6,
     zIndex: 10,
+  },
+  botIconBubble: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   // Chat Panel
   chatPanel: {

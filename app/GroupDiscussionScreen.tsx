@@ -1,6 +1,7 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -559,7 +560,20 @@ export default function GroupDiscussionScreen() {
         <GameHeader 
           title="Group Discussions" 
           showBackButton 
-          onBackPress={() => navigation.goBack()}
+          onBackPress={() => {
+            // Prefer normal back; otherwise fall back to tabs
+            // @ts-ignore
+            if (navigation.canGoBack && navigation.canGoBack()) {
+              navigation.goBack();
+            } else {
+              try {
+                // @ts-ignore
+                navigation.navigate('(tabs)');
+              } catch {
+                router.push('/(tabs)');
+              }
+            }
+          }}
         />
       </View>
       
