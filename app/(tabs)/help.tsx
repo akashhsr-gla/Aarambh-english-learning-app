@@ -1,4 +1,5 @@
 import { FontAwesome } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { Linking, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
@@ -15,6 +16,13 @@ export default function HelpScreen() {
 
   return (
     <View style={styles.container}>
+      <LinearGradient
+        colors={['rgba(220, 41, 41, 0.15)', 'rgba(255, 255, 255, 1)', 'rgba(255, 255, 255, 1)', 'rgba(34, 108, 174, 0.15)']}
+        locations={[0, 0.25, 0.75, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.gradientBackground}
+      />
       <Header title="Help" />
       
       <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
@@ -368,7 +376,7 @@ export default function HelpScreen() {
           <ThemedText style={styles.appName}>Aarambh App</ThemedText>
           <ThemedText style={styles.versionText}>Version 1.0.0</ThemedText>
           <ThemedText style={styles.copyrightText}>
-            © 2024 Aarambh. All rights reserved.
+            © 2025 Aarambh. All rights reserved.
           </ThemedText>
         </ThemedView>
         {/* Bottom spacer for lifted tab bar */}
@@ -383,6 +391,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  gradientBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: -1,
   },
   scrollContainer: {
     flex: 1,
