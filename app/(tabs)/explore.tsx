@@ -46,7 +46,7 @@ export default function GameScreen() {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={['rgba(220, 41, 41, 0.03)', 'rgba(255, 255, 255, 0.98)', 'rgba(255, 255, 255, 0.98)', 'rgba(34, 108, 174, 0.03)']}
+        colors={['rgba(220, 41, 41, 0.15)', 'rgba(255, 255, 255, 1)', 'rgba(255, 255, 255, 1)', 'rgba(34, 108, 174, 0.15)']}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={styles.gradientBackground}
@@ -65,10 +65,6 @@ export default function GameScreen() {
         {/* Featured Games Section */}
         <View style={styles.sectionHeader}>
           <ThemedText style={styles.sectionTitle}>Featured Games</ThemedText>
-          <TouchableOpacity style={styles.viewAllButton}>
-            <ThemedText style={styles.viewAllText}>View All</ThemedText>
-            <FontAwesome name="angle-right" size={16} color="#226cae" />
-          </TouchableOpacity>
         </View>
 
         {/* Game Cards */}
@@ -88,14 +84,11 @@ export default function GameScreen() {
                 <View style={styles.gameDetails}>
                   <View style={styles.titleRow}>
                     <ThemedText style={styles.gameTitle}>Identification Game</ThemedText>
-                    <View style={styles.newBadge}>
-                      <ThemedText style={styles.newBadgeText}>NEW</ThemedText>
-                    </View>
                   </View>
                   <ThemedText style={styles.gameDescription}>Name objects and activities correctly</ThemedText>
                   <View style={styles.levelContainer}>
                     <View style={styles.levelIndicator}>
-                      <ThemedText style={styles.levelText}>Intermediate</ThemedText>
+                      <ThemedText style={styles.levelText}>Beginner</ThemedText>
                     </View>
                     <View style={styles.starsContainer}>
                       <FontAwesome name="star" size={14} color="#FFD700" style={styles.starIcon} />
@@ -126,8 +119,8 @@ export default function GameScreen() {
                     </View>
                     <View style={styles.starsContainer}>
                       <FontAwesome name="star" size={14} color="#FFD700" style={styles.starIcon} />
-                      <FontAwesome name="star-o" size={14} color="#FFD700" style={styles.starIcon} />
-                      <FontAwesome name="star-o" size={14} color="#FFD700" style={styles.starIcon} />
+                      <FontAwesome name="star" size={14} color="#FFD700" style={styles.starIcon} />
+                      <FontAwesome name="star" size={14} color="#FFD700" style={styles.starIcon} />
                     </View>
                   </View>
                 </View>
@@ -149,12 +142,12 @@ export default function GameScreen() {
                   <ThemedText style={styles.gameDescription}>Test your grammar knowledge</ThemedText>
                   <View style={styles.levelContainer}>
                     <View style={styles.levelIndicator}>
-                      <ThemedText style={styles.levelText}>All Levels</ThemedText>
+                      <ThemedText style={styles.levelText}>Intermediate</ThemedText>
                     </View>
                     <View style={styles.starsContainer}>
                       <FontAwesome name="star" size={14} color="#FFD700" style={styles.starIcon} />
                       <FontAwesome name="star" size={14} color="#FFD700" style={styles.starIcon} />
-                      <FontAwesome name="star" size={14} color="#FFD700" style={styles.starIcon} />
+                      <FontAwesome name="star-o" size={14} color="#FFD700" style={styles.starIcon} />
                     </View>
                   </View>
                 </View>
@@ -174,14 +167,11 @@ export default function GameScreen() {
                 <View style={styles.gameDetails}>
                   <View style={styles.titleRow}>
                     <ThemedText style={styles.gameTitle}>Story Telling</ThemedText>
-                    <View style={styles.newBadge}>
-                      <ThemedText style={styles.newBadgeText}>NEW</ThemedText>
-                    </View>
                   </View>
                   <ThemedText style={styles.gameDescription}>Complete creative stories and earn points</ThemedText>
                   <View style={styles.levelContainer}>
                     <View style={styles.levelIndicator}>
-                      <ThemedText style={styles.levelText}>All Levels</ThemedText>
+                      <ThemedText style={styles.levelText}>Advanced</ThemedText>
                     </View>
                     <View style={styles.starsContainer}>
                       <FontAwesome name="star" size={14} color="#FFD700" style={styles.starIcon} />
@@ -202,10 +192,6 @@ export default function GameScreen() {
         {/* Daily Challenges Section */}
         <View style={styles.sectionHeader}>
           <ThemedText style={styles.sectionTitle}>Daily Challenges</ThemedText>
-          <TouchableOpacity style={styles.viewAllButton} onPress={() => navigation.navigate('DailyChallenges' as never)}>
-            <ThemedText style={styles.viewAllText}>View All</ThemedText>
-            <FontAwesome name="angle-right" size={16} color="#226cae" />
-          </TouchableOpacity>
         </View>
 
         <ThemedView style={styles.challengeCard}>
@@ -215,25 +201,7 @@ export default function GameScreen() {
             </View>
             <ThemedText style={styles.challengeTitle}>Today's Challenge</ThemedText>
           </View>
-          <View style={styles.challengeContent}>
-            <ThemedText style={styles.challengeDescription}>
-              Complete a 5-minute identification game with at least 80% accuracy.
-            </ThemedText>
-            <View style={styles.challengeStats}>
-              <View style={styles.challengeStat}>
-                <FontAwesome name="users" size={14} color="#226cae" />
-                <ThemedText style={styles.challengeStatText}>142 completed</ThemedText>
-              </View>
-              <View style={styles.challengeStat}>
-                <FontAwesome name="clock-o" size={14} color="#dc2929" />
-                <ThemedText style={styles.challengeStatText}>5 min</ThemedText>
-              </View>
-              <View style={styles.challengeStat}>
-                <FontAwesome name="star" size={14} color="#FFD700" />
-                <ThemedText style={styles.challengeStatText}>50 points</ThemedText>
-              </View>
-            </View>
-          </View>
+          
           <TouchableOpacity style={styles.startChallengeButton} onPress={() => navigateToGame('identification')}>
             <ThemedText style={styles.startChallengeText}>Start Challenge</ThemedText>
             <FontAwesome name="play" size={14} color="#FFFFFF" />

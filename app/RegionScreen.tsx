@@ -53,9 +53,20 @@ export default function RegionScreen() {
       setLoading(true);
       setError(null);
       const response = await regionsAPI.getAllRegions();
-      
+
       if (response.success && response.data?.regions) {
-        setRegions(response.data.regions);
+        const fetchedRegions: Region[] = response.data.regions;
+        setRegions(fetchedRegions);
+
+        // Also fetch current user to preselect their region for preview
+        try {
+          const userRes = await authAPI.getCurrentUser();
+          const userRegionId = userRes?.data?.user?.region?._id || userRes?.data?.user?.region;
+          if (userRegionId) {
+            const current = fetchedRegions.find(r => r._id === userRegionId);
+            if (current) setSelectedRegion(current);
+          }
+        } catch {}
       } else {
         setError('Failed to load regions');
       }
@@ -95,9 +106,9 @@ export default function RegionScreen() {
 
         if (updateResponse.success) {
           Alert.alert(
-            'Success', 
-            `Region updated to ${selectedRegion.name}`,
-            [{ text: 'OK', onPress: () => navigation.goBack() }]
+            'Region Updated', 
+            `Your region is now set to ${selectedRegion.name} (${selectedRegion.code}).`,
+            [{ text: 'OK' }]
           );
         } else {
           Alert.alert('Error', updateResponse.message || 'Failed to update region');
@@ -129,8 +140,8 @@ export default function RegionScreen() {
         <ThemedView style={styles.titleContainer}>
           <ThemedText style={styles.titleText}>Choose your location</ThemedText>
           <View style={styles.titleUnderline} />
-          <ThemedText style={styles.subtitle}>
-            Setting your region helps us provide content relevant to your area
+          <ThemedText style={styles.subtitleEmphasis}>
+            Setting your region helps us to connect you with other people in your area to learn english together.
           </ThemedText>
         </ThemedView>
         
@@ -213,25 +224,26 @@ export default function RegionScreen() {
         {!loading && !error && (
         <ThemedView style={styles.mapPreview}>
           <FontAwesome name="map" size={60} color="#226cae" />
-          <ThemedText style={styles.mapPlaceholderText}>
-              {selectedRegion 
-                ? `${selectedRegion.name} - ${selectedRegion.code}`
-                : 'Region preview will appear here'}
-          </ThemedText>
-            {selectedRegion && selectedRegion.totalUsers && (
-              <View style={styles.regionStats}>
-                <View style={styles.statItem}>
-                  <FontAwesome name="users" size={14} color="#226cae" />
-                  <ThemedText style={styles.statText}>{selectedRegion.totalUsers} users</ThemedText>
+          {selectedRegion ? (
+            <>
+              <ThemedText style={styles.mapTitle}>{selectedRegion.name} ({selectedRegion.code})</ThemedText>
+              {selectedRegion.description && (
+                <ThemedText style={styles.mapDescription}>{selectedRegion.description}</ThemedText>
+              )}
+              {typeof selectedRegion.totalUsers === 'number' && selectedRegion.totalUsers > 0 ? (
+                <View style={styles.regionStats}>
+                  {typeof selectedRegion.totalUsers === 'number' && selectedRegion.totalUsers > 0 && (
+                    <View style={styles.statItem}>
+                      <FontAwesome name="users" size={14} color="#226cae" />
+                      <ThemedText style={styles.statText}>{selectedRegion.totalUsers} users</ThemedText>
+                    </View>
+                  )}
                 </View>
-                {selectedRegion.averageScore && (
-                  <View style={styles.statItem}>
-                    <FontAwesome name="star" size={14} color="#FFD700" />
-                    <ThemedText style={styles.statText}>{selectedRegion.averageScore.toFixed(1)} avg score</ThemedText>
-                  </View>
-                )}
-              </View>
-            )}
+              ) : null}
+            </>
+          ) : (
+            <ThemedText style={styles.mapPlaceholderText}>Region preview will appear here</ThemedText>
+          )}
         </ThemedView>
         )}
         
@@ -382,11 +394,30 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: '#226cae',
   },
+  mapTitle: {
+    marginTop: 12,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#226cae',
+    textAlign: 'center',
+  },
+  mapDescription: {
+    marginTop: 6,
+    fontSize: 13,
+    color: '#555555',
+    textAlign: 'center',
+  },
   mapPlaceholderText: {
     marginTop: 15,
     color: '#333333',
     textAlign: 'center',
     fontWeight: '500',
+  },
+  subtitleEmphasis: {
+    fontSize: 16,
+    color: '#226cae',
+    lineHeight: 22,
+    fontWeight: '600',
   },
   saveButton: {
     backgroundColor: '#dc2929',

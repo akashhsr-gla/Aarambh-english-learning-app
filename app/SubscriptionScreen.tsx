@@ -156,28 +156,7 @@ export default function SubscriptionScreen() {
     }
   };
 
-  const handleCancelSubscription = async () => {
-    Alert.alert(
-      'Cancel Subscription',
-      'Are you sure you want to cancel your subscription? You will lose access to premium features at the end of your current billing period.',
-      [
-        { text: 'Keep Subscription', style: 'cancel' },
-        {
-          text: 'Cancel Subscription',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // In a real app, this would call the backend to cancel subscription
-              Alert.alert('Success', 'Your subscription has been cancelled.');
-              loadSubscriptionData();
-            } catch (err: any) {
-              Alert.alert('Error', 'Failed to cancel subscription');
-            }
-          }
-        }
-      ]
-    );
-  };
+  // Cancel subscription feature not available; no handler
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -280,14 +259,7 @@ export default function SubscriptionScreen() {
                 Valid until: {userSubscription.endDate ? new Date(userSubscription.endDate).toLocaleDateString() : 'Unknown'}
               </ThemedText>
               
-              {userSubscription.status === 'active' && (
-                <TouchableOpacity 
-                  style={styles.cancelButton}
-                  onPress={handleCancelSubscription}
-                >
-                  <ThemedText style={styles.cancelButtonText}>Cancel Subscription</ThemedText>
-                </TouchableOpacity>
-              )}
+              {/* Cancel subscription removed - feature not supported */}
             </View>
           </ThemedView>
         )}
@@ -340,27 +312,46 @@ export default function SubscriptionScreen() {
                       <ThemedText style={styles.featureText}>No features available</ThemedText>
                     )}
                   </View>
-                  
-                  <TouchableOpacity 
-                    style={[
-                      styles.subscribeButton,
-                      plan.isPopular && styles.popularSubscribeButton,
-                      selectedPlan === plan._id && styles.subscribingButton
-                    ]}
-                    onPress={() => handleSubscribe(plan._id)}
-                    disabled={selectedPlan === plan._id}
-                  >
-                    {selectedPlan === plan._id ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <>
-                        <FontAwesome name="star" size={16} color="#FFFFFF" />
-                        <ThemedText style={styles.subscribeButtonText}>
-                          {userSubscription?.plan?._id === plan._id ? 'Current Plan' : 'Subscribe'}
-                        </ThemedText>
-                      </>
-                    )}
-                  </TouchableOpacity>
+                  {(() => {
+                    const isUserActive = userSubscription?.status === 'active';
+                    if (isUserActive) {
+                      return (
+                        <>
+                          <View
+                            style={[
+                              styles.subscribeButton,
+                              styles.disabledSubscribeButton,
+                              plan.isPopular && styles.popularSubscribeButton,
+                            ]}
+                          >
+                            <FontAwesome name="check" size={16} color="#FFFFFF" />
+                            <ThemedText style={styles.subscribeButtonText}>Subscription Active</ThemedText>
+                          </View>
+                          <ThemedText style={styles.activePlanNote}>You already have an active plan</ThemedText>
+                        </>
+                      );
+                    }
+                    return (
+                      <TouchableOpacity 
+                        style={[
+                          styles.subscribeButton,
+                          plan.isPopular && styles.popularSubscribeButton,
+                          selectedPlan === plan._id && styles.subscribingButton
+                        ]}
+                        onPress={() => handleSubscribe(plan._id)}
+                        disabled={selectedPlan === plan._id}
+                      >
+                        {selectedPlan === plan._id ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <>
+                            <FontAwesome name="star" size={16} color="#FFFFFF" />
+                            <ThemedText style={styles.subscribeButtonText}>Subscribe</ThemedText>
+                          </>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })()}
                 </ThemedView>
               ))}
             </View>
@@ -645,6 +636,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     gap: 8,
   },
+  disabledSubscribeButton: {
+    opacity: 0.6,
+  },
   popularSubscribeButton: {
     backgroundColor: '#dc2929',
   },
@@ -655,6 +649,11 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  activePlanNote: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#4CAF50',
   },
   noPlansContainer: {
     alignItems: 'center',

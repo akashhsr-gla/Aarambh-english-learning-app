@@ -3,13 +3,14 @@ const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const Referral = require('../models/Referral');
 const User = require('../models/User');
-const Transaction = require('../models/Transaction');
 const { authenticateToken, requireAdmin, requireTeacher } = require('../middleware/auth');
+const Transaction = require('../models/Transaction');
+const Plan = require('../models/Plan');
 
 // Validation middleware
 const validateReferral = [
   body('teacher').isMongoId().withMessage('Valid teacher ID is required'),
-  body('referralCode').trim().isLength({ min: 3, max: 20 }).withMessage('Referral code must be between 3 and 20 characters'),
+  // Admin cannot set custom referralCode anymore; it is auto-generated for teacher
   body('discountPercentage').isInt({ min: 1, max: 100 }).withMessage('Discount percentage must be between 1 and 100'),
   body('isActive').optional().isBoolean().withMessage('isActive must be a boolean'),
   body('maxUses').optional().isInt({ min: 1 }).withMessage('Max uses must be a positive number'),
@@ -18,7 +19,13 @@ const validateReferral = [
 ];
 
 const validateReferralUpdate = [
-  body('referralCode').optional().trim().isLength({ min: 3, max: 20 }).withMessage('Referral code must be between 3 and 20 characters'),
+  // Prevent changing referralCode via update; only discount and status-like fields allowed
+  body('referralCode').custom((value) => {
+    if (value !== undefined) {
+      throw new Error('Referral code cannot be changed');
+    }
+    return true;
+  }),
   body('discountPercentage').optional().isInt({ min: 1, max: 100 }).withMessage('Discount percentage must be between 1 and 100'),
   body('isActive').optional().isBoolean().withMessage('isActive must be a boolean'),
   body('maxUses').optional().isInt({ min: 1 }).withMessage('Max uses must be a positive number'),
@@ -175,7 +182,6 @@ router.post('/', authenticateToken, requireAdmin, validateReferral, async (req, 
 
     const { 
       teacher, 
-      referralCode, 
       discountPercentage, 
       isActive = true, 
       maxUses, 
@@ -199,16 +205,17 @@ router.post('/', authenticateToken, requireAdmin, validateReferral, async (req, 
       });
     }
 
-    // Check if referral code already exists
-    const existingReferral = await Referral.findOne({ 
-      referralCode: { $regex: new RegExp(`^${referralCode}$`, 'i') } 
-    });
-    if (existingReferral) {
-      return res.status(400).json({
-        success: false,
-        message: 'Referral code already exists'
-      });
+    // Generate a unique 6-digit referral code for the teacher
+    const generateCode = () => Math.floor(100000 + Math.random() * 900000).toString();
+    let referralCode;
+    let attempts = 0;
+    while (attempts < 5) {
+      const code = generateCode();
+      const exists = await Referral.findOne({ referralCode: code }).lean();
+      if (!exists) { referralCode = code; break; }
+      attempts += 1;
     }
+    if (!referralCode) referralCode = generateCode();
 
     // Create referral
     const referral = new Referral({
@@ -275,31 +282,25 @@ router.put('/:id', authenticateToken, requireAdmin, validateReferralUpdate, asyn
       });
     }
 
-    // Check if referral code is being changed and if it already exists
-    if (req.body.referralCode && req.body.referralCode !== referral.referralCode) {
-      const existingReferral = await Referral.findOne({ 
-        referralCode: { $regex: new RegExp(`^${req.body.referralCode}$`, 'i') },
-        _id: { $ne: id }
-      });
-      if (existingReferral) {
+    // Disallow changing referralCode via update
+    if (req.body.referralCode !== undefined) {
         return res.status(400).json({
           success: false,
-          message: 'Referral code already exists'
-        });
-      }
+        message: 'Referral code cannot be changed'
+      });
     }
 
-    // Update fields
-    Object.assign(referral, req.body);
+    // Update only allowed fields
+    const { discountPercentage: dp, isActive, maxUses, expiryDate, description } = req.body;
+    if (dp !== undefined) referral.discountPercentage = dp;
+    if (isActive !== undefined) referral.isActive = isActive;
+    if (maxUses !== undefined) referral.maxUses = maxUses;
+    if (expiryDate !== undefined) referral.expiryDate = expiryDate;
+    if (description !== undefined) referral.description = description;
     referral.updatedAt = new Date();
     await referral.save();
 
-    // Update teacher's referral code if changed
-    if (req.body.referralCode && req.body.referralCode !== referral.referralCode) {
-      await User.findByIdAndUpdate(referral.teacher, {
-        'teacherInfo.referralCode': req.body.referralCode
-      });
-    }
+    // Never update teacher's referral code from here
 
     // Populate teacher info for response
     await referral.populate('teacher', 'name email phone');
@@ -435,11 +436,11 @@ router.get('/teacher/:teacherId', authenticateToken, async (req, res) => {
     }
 
     const referrals = await Referral.find({ teacher: teacherId })
-      .populate('usedBy', 'name email phone')
+      .populate({ path: 'usedBy.student', select: 'name email phone' })
       .sort({ createdAt: -1 });
 
     // Get teacher info
-    const teacher = await User.findById(teacherId).select('name email phone role');
+    const teacher = await User.findById(teacherId).select('name email phone role teacherInfo.referralCode');
 
     if (!teacher) {
       return res.status(404).json({
@@ -462,12 +463,20 @@ router.get('/teacher/:teacherId', authenticateToken, async (req, res) => {
       }
     ]);
 
+    // Fetch transactions associated with this teacher's code usage
+    const transactions = await Transaction.find({ referredBy: teacherId, status: 'completed' })
+      .populate('user', 'name email phone')
+      .populate('plan', 'name price duration description')
+      .sort({ createdAt: -1 });
+
     res.json({
       success: true,
       message: 'Teacher referrals retrieved successfully',
       data: {
         teacher,
+        code: teacher.teacherInfo?.referralCode || null,
         referrals,
+        transactions,
         statistics: referralStats[0] || {
           totalReferrals: 0,
           activeReferrals: 0,
@@ -599,7 +608,7 @@ router.get('/admin/statistics', authenticateToken, requireAdmin, async (req, res
 // 9. VALIDATE REFERRAL CODE (Public - for checking if referral code is valid)
 router.post('/validate', async (req, res) => {
   try {
-    const { referralCode } = req.body;
+    const { referralCode, amount = 0 } = req.body;
 
     if (!referralCode) {
       return res.status(400).json({
@@ -608,19 +617,18 @@ router.post('/validate', async (req, res) => {
       });
     }
 
-    const referral = await Referral.findOne({ 
+    // First check Referral collection (admin-created referrals)
+    let referral = await Referral.findOne({ 
       referralCode: { $regex: new RegExp(`^${referralCode}$`, 'i') },
-      isActive: true
+      isActive: true,
+      isApproved: true
     });
 
-    if (!referral) {
-      return res.json({
-        success: false,
-        message: 'Invalid or inactive referral code',
-        data: { isValid: false }
-      });
-    }
+    let teacher = null;
+    let discountPercentage = 25; // Default discount
+    let maximumDiscount = 1000; // Default max discount
 
+    if (referral) {
     // Check if referral has expired
     if (referral.expiryDate && new Date() > referral.expiryDate) {
       return res.json({
@@ -639,8 +647,44 @@ router.post('/validate', async (req, res) => {
       });
     }
 
-    // Get teacher info
-    const teacher = await User.findById(referral.teacher).select('name email');
+      teacher = await User.findById(referral.teacher).select('name email');
+      discountPercentage = referral.discountPercentage;
+      maximumDiscount = referral.maximumDiscount || 1000;
+    } else {
+      // Check User collection for teacher's auto-generated referral code
+      // TEMPORARY: Comment out isApproved check for testing (uncomment later for manual approval)
+      const teacherUser = await User.findOne({
+        'teacherInfo.referralCode': { $regex: new RegExp(`^${referralCode}$`, 'i') },
+        role: 'teacher'
+        // 'teacherInfo.isApproved': true  // Commented out temporarily
+      }).select('name email teacherInfo');
+
+      if (teacherUser) {
+        teacher = {
+          _id: teacherUser._id,
+          name: teacherUser.name,
+          email: teacherUser.email
+        };
+        // Use default discount for teacher codes
+        discountPercentage = 25;
+        maximumDiscount = 1000;
+      }
+    }
+
+    if (!teacher) {
+      return res.json({
+        success: false,
+        message: 'Invalid or inactive referral code',
+        data: { isValid: false }
+      });
+    }
+
+    // Calculate discount
+    const discountAmount = Math.min(
+      (Number(amount) * discountPercentage) / 100,
+      maximumDiscount
+    );
+    const finalAmount = Math.max(Number(amount) - discountAmount, 0);
 
     res.json({
       success: true,
@@ -648,10 +692,12 @@ router.post('/validate', async (req, res) => {
       data: {
         isValid: true,
         referral: {
-          id: referral._id,
-          code: referral.referralCode,
-          discountPercentage: referral.discountPercentage,
-          description: referral.description,
+          id: referral?._id || teacher._id,
+          code: referralCode,
+          discountPercentage,
+          discountAmount,
+          finalAmount,
+          description: referral?.description || 'Teacher referral code',
           teacher: teacher
         }
       }

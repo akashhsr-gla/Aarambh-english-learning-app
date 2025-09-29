@@ -2,12 +2,12 @@ import { FontAwesome } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
-import React, { useState, useEffect } from 'react';
-import { Alert, Dimensions, ScrollView, StyleSheet, TouchableOpacity, View, ActivityIndicator } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, Dimensions, ScrollView, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
-import { teacherAPI, authAPI } from './services/api';
+import { authAPI, teacherAPI } from './services/api';
 
 const { width, height } = Dimensions.get('window');
 
@@ -30,6 +30,19 @@ export default function TeacherDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [claimLoading, setClaimLoading] = useState(false);
+  const [profileExpanded, setProfileExpanded] = useState(true);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [editFields, setEditFields] = useState<any>({
+    name: '',
+    email: '',
+    phone: '',
+    qualification: '',
+    experience: 0,
+    specialization: '', // comma-separated in UI
+    bio: '',
+    hourlyRate: 0,
+  });
 
   // Load teacher dashboard data
   const loadDashboardData = async () => {
@@ -43,11 +56,14 @@ export default function TeacherDashboard() {
 
       // Get teacher referral data and statistics
       const teacherResponse = await teacherAPI.getDashboardData();
-      const referralData = teacherResponse.data;
+      const referralData = teacherResponse.data || {};
 
       // Calculate earnings based on referral data
-      const referrals = referralData.referrals || [];
+      const referrals = (referralData.referrals || []) as any[];
       const statistics = referralData.statistics || {};
+      const teacher = referralData.teacher || currentUser;
+      const teacherCode = referralData.code || currentUser.teacherInfo?.referralCode || 'N/A';
+      const transactions = referralData.transactions || [];
       
       // Calculate total earnings (simplified calculation - actual formula may vary)
       const totalUses = statistics.totalUses || 0;
@@ -57,29 +73,40 @@ export default function TeacherDashboard() {
       const pendingClaims = Math.floor(totalEarnings * 0.1); // 10% pending
 
       setTeacherData({
-        name: currentUser.name,
-        email: currentUser.email,
-        referralCode: currentUser.teacherInfo?.referralCode || 'N/A',
+        name: teacher.name,
+        email: teacher.email,
+        referralCode: teacherCode,
         totalEarnings,
         pendingClaims,
         claimableAmount,
       });
 
-      // Transform referrals into students data
-      const students = referrals.map((referral: any, index: number) => ({
+      // Build students list from transactions (has user + plan info)
+      const students = (transactions as any[]).map((tx: any, index: number) => ({
         id: index + 1,
-        name: referral.usedBy?.name || 'Unknown Student',
-        joinDate: new Date(referral.createdAt).toLocaleDateString('en-GB', {
-          day: '2-digit',
-          month: 'short',
-          year: 'numeric'
-        }),
-        completedLessons: Math.floor(Math.random() * 50) + 10, // Mock data - should come from backend
-        status: referral.isActive ? 'active' : 'inactive',
+        name: tx.user?.name || 'Unknown Student',
+        joinDate: new Date(tx.createdAt || Date.now()).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
+        status: tx.status || 'Unknown',
+        plan: tx.plan?.name || 'Plan',
+        amount: tx.amount || 0,
+        finalAmount: tx.finalAmount || tx.amount || 0,
+        discount: tx.discountAmount || 0,
         earnings: avgEarningsPerReferral,
       }));
 
       setStudentsData(students);
+
+      // Prime editable fields from current teacher profile
+      setEditFields({
+        name: teacher.name || '',
+        email: teacher.email || '',
+        phone: teacher.phone || '',
+        qualification: teacher.teacherInfo?.qualification || '',
+        experience: teacher.teacherInfo?.experience || 0,
+        specialization: (teacher.teacherInfo?.specialization || []).join(', '),
+        bio: teacher.teacherInfo?.bio || '',
+        hourlyRate: teacher.teacherInfo?.hourlyRate || 0,
+      });
 
     } catch (err: any) {
       console.error('Error loading dashboard data:', err);
@@ -140,6 +167,55 @@ export default function TeacherDashboard() {
     navigation.navigate('LoginScreen' as never);
   };
 
+  const saveProfile = async () => {
+    if (savingProfile) return;
+    try {
+      setSavingProfile(true);
+      const me = await authAPI.getCurrentUser();
+      const userId = me.data._id;
+      const payload = {
+        name: editFields.name,
+        email: editFields.email,
+        phone: editFields.phone,
+        teacherInfo: {
+          qualification: editFields.qualification,
+          experience: Number(editFields.experience) || 0,
+          specialization: String(editFields.specialization || '')
+            .split(',')
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0),
+          bio: editFields.bio,
+          hourlyRate: Number(editFields.hourlyRate) || 0,
+        },
+      };
+      const resp = await authAPI.updateProfile(userId, payload);
+      if (!resp.success) throw new Error(resp.message || 'Failed to update profile');
+      Alert.alert('Profile Updated', 'Your teacher profile has been saved.');
+      setIsEditingProfile(false);
+      // Reload data to get updated information
+      await loadDashboardData();
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to save profile');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const cancelEdit = () => {
+    setIsEditingProfile(false);
+    // Reset form to original values
+    setEditFields({
+      name: teacherData.name,
+      email: teacherData.email,
+      phone: '', // Will be loaded from current user data
+      qualification: '',
+      experience: 0,
+      specialization: '',
+      bio: '',
+      hourlyRate: 0,
+    });
+  };
+
   if (loading) {
     return (
       <View style={[styles.container, styles.centerContent]}>
@@ -185,7 +261,193 @@ export default function TeacherDashboard() {
       </LinearGradient>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        {/* Referral Code Section */}
+      {/* Teacher Profile (Expandable, editable) */}
+      <ThemedView style={styles.profileCard}>
+        <View style={styles.profileHeaderRow}>
+          <View style={styles.profileHeaderLeft}>
+            <FontAwesome name="user-circle" size={20} color="#dc2929" />
+            <ThemedText style={styles.sectionTitle}>Teacher Profile</ThemedText>
+          </View>
+          <View style={styles.profileHeaderRight}>
+            {!isEditingProfile && (
+              <TouchableOpacity onPress={() => setIsEditingProfile(true)} style={styles.editButton}>
+                <FontAwesome name="edit" size={16} color="#dc2929" />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity onPress={() => setProfileExpanded(!profileExpanded)} style={styles.toggleButton}>
+              <FontAwesome name={profileExpanded ? 'chevron-up' : 'chevron-down'} size={16} color="#dc2929" />
+            </TouchableOpacity>
+          </View>
+        </View>
+        {profileExpanded && (
+          <View>
+            {isEditingProfile ? (
+              <View style={styles.editForm}>
+                {/* Basic Information */}
+                <View style={styles.formSection}>
+                  <ThemedText style={styles.formSectionTitle}>Basic Information</ThemedText>
+                  <View style={styles.inputGroup}>
+                    <ThemedText style={styles.inputLabel}>Full Name</ThemedText>
+                    <TextInput
+                      style={styles.textInput}
+                      value={editFields.name}
+                      onChangeText={(text) => setEditFields({ ...editFields, name: text })}
+                      placeholder="Enter your full name"
+                      placeholderTextColor="#999999"
+                    />
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <ThemedText style={styles.inputLabel}>Email Address</ThemedText>
+                    <TextInput
+                      style={styles.textInput}
+                      value={editFields.email}
+                      onChangeText={(text) => setEditFields({ ...editFields, email: text })}
+                      placeholder="Enter your email address"
+                      placeholderTextColor="#999999"
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                    />
+                  </View>
+                  <View style={styles.inputGroup}>
+                    <ThemedText style={styles.inputLabel}>Phone Number</ThemedText>
+                    <TextInput
+                      style={styles.textInput}
+                      value={editFields.phone}
+                      onChangeText={(text) => setEditFields({ ...editFields, phone: text })}
+                      placeholder="Enter your phone number"
+                      placeholderTextColor="#999999"
+                      keyboardType="phone-pad"
+                    />
+                  </View>
+                </View>
+
+                {/* Professional Information */}
+                <View style={styles.formSection}>
+                  <ThemedText style={styles.formSectionTitle}>Professional Information</ThemedText>
+                  <View style={styles.formGrid}>
+                    <View style={styles.formField}>
+                      <ThemedText style={styles.inputLabel}>Qualification</ThemedText>
+                      <TextInput
+                        style={styles.textInput}
+                        value={editFields.qualification}
+                        onChangeText={(text) => setEditFields({ ...editFields, qualification: text })}
+                        placeholder="e.g., B.Ed, M.A English"
+                        placeholderTextColor="#999999"
+                      />
+                    </View>
+                    <View style={styles.formField}>
+                      <ThemedText style={styles.inputLabel}>Experience (years)</ThemedText>
+                      <TextInput
+                        style={styles.textInput}
+                        value={String(editFields.experience)}
+                        onChangeText={(text) => setEditFields({ ...editFields, experience: Number(text) || 0 })}
+                        placeholder="0"
+                        placeholderTextColor="#999999"
+                        keyboardType="numeric"
+                      />
+                    </View>
+                    <View style={styles.formField}>
+                      <ThemedText style={styles.inputLabel}>Hourly Rate (₹)</ThemedText>
+                      <TextInput
+                        style={styles.textInput}
+                        value={String(editFields.hourlyRate)}
+                        onChangeText={(text) => setEditFields({ ...editFields, hourlyRate: Number(text) || 0 })}
+                        placeholder="0"
+                        placeholderTextColor="#999999"
+                        keyboardType="numeric"
+                      />
+                    </View>
+                    <View style={[styles.formField, { width: '100%' }]}>
+                      <ThemedText style={styles.inputLabel}>Specialization</ThemedText>
+                      <TextInput
+                        style={styles.textInput}
+                        value={editFields.specialization}
+                        onChangeText={(text) => setEditFields({ ...editFields, specialization: text })}
+                        placeholder="e.g., English Grammar, Speaking, Writing (comma-separated)"
+                        placeholderTextColor="#999999"
+                      />
+                    </View>
+                    <View style={[styles.formField, { width: '100%' }]}>
+                      <ThemedText style={styles.inputLabel}>Bio</ThemedText>
+                      <TextInput
+                        style={[styles.textInput, styles.textAreaInput]}
+                        value={editFields.bio}
+                        onChangeText={(text) => setEditFields({ ...editFields, bio: text })}
+                        placeholder="Tell us about your teaching experience and approach..."
+                        placeholderTextColor="#999999"
+                        multiline
+                        numberOfLines={4}
+                        textAlignVertical="top"
+                      />
+                    </View>
+                  </View>
+                </View>
+
+                {/* Action Buttons */}
+                <View style={styles.editActions}>
+                  <TouchableOpacity 
+                    style={styles.cancelButton}
+                    onPress={cancelEdit}
+                  >
+                    <ThemedText style={styles.cancelButtonText}>Cancel</ThemedText>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.saveButton, savingProfile && styles.disabledButton]}
+                    onPress={saveProfile}
+                    disabled={savingProfile}
+                  >
+                    {savingProfile ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <ThemedText style={styles.saveButtonText}>Save Changes</ThemedText>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <View>
+                {/* Display Mode */}
+                <View style={styles.profileGrid}>
+                  <View style={styles.profileField}> 
+                    <ThemedText style={styles.profileLabel}>Name</ThemedText>
+                    <ThemedText style={styles.profileValue}>{teacherData.name}</ThemedText>
+                  </View>
+                  <View style={styles.profileField}> 
+                    <ThemedText style={styles.profileLabel}>Email</ThemedText>
+                    <ThemedText style={styles.profileValue}>{teacherData.email}</ThemedText>
+                  </View>
+                </View>
+                <View style={styles.profileInfoGrid}>
+                  <View style={styles.profileInfoField}>
+                    <ThemedText style={styles.profileLabel}>Qualification</ThemedText>
+                    <ThemedText style={styles.profileValue}>{editFields.qualification || 'Not specified'}</ThemedText>
+                  </View>
+                  <View style={styles.profileInfoField}>
+                    <ThemedText style={styles.profileLabel}>Experience</ThemedText>
+                    <ThemedText style={styles.profileValue}>{editFields.experience} years</ThemedText>
+                  </View>
+                  <View style={styles.profileInfoField}>
+                    <ThemedText style={styles.profileLabel}>Hourly Rate</ThemedText>
+                    <ThemedText style={styles.profileValue}>₹{editFields.hourlyRate}/hour</ThemedText>
+                  </View>
+                  <View style={[styles.profileInfoField, { width: '100%' }]}>
+                    <ThemedText style={styles.profileLabel}>Specialization</ThemedText>
+                    <ThemedText style={styles.profileValue}>{editFields.specialization || 'Not specified'}</ThemedText>
+                  </View>
+                  {editFields.bio && (
+                    <View style={[styles.profileInfoField, { width: '100%' }]}>
+                      <ThemedText style={styles.profileLabel}>Bio</ThemedText>
+                      <ThemedText style={styles.profileValue}>{editFields.bio}</ThemedText>
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
+          </View>
+        )}
+      </ThemedView>
+
+      {/* Referral Code Section */}
         <ThemedView style={styles.referralContainer}>
           <View style={styles.referralHeader}>
             <ThemedText style={styles.sectionTitle}>Your Referral Code</ThemedText>
@@ -215,47 +477,6 @@ export default function TeacherDashboard() {
           </ThemedText>
         </ThemedView>
 
-        {/* Earnings Summary */}
-        <ThemedView style={styles.earningsContainer}>
-          <ThemedText style={styles.sectionTitle}>Earnings Summary</ThemedText>
-          
-          <View style={styles.earningsGrid}>
-            <View style={styles.earningsItem}>
-              <ThemedText style={styles.earningsValue}>{formatCurrency(teacherData.totalEarnings)}</ThemedText>
-              <ThemedText style={styles.earningsLabel}>Total Earnings</ThemedText>
-            </View>
-            
-            <View style={styles.earningsItem}>
-              <ThemedText style={styles.earningsValue}>{formatCurrency(teacherData.pendingClaims)}</ThemedText>
-              <ThemedText style={styles.earningsLabel}>Pending Claims</ThemedText>
-            </View>
-            
-            <View style={[styles.earningsItem, styles.highlightedEarningsItem]}>
-              <ThemedText style={[styles.earningsValue, styles.highlightedEarningsValue]}>
-                {formatCurrency(teacherData.claimableAmount)}
-              </ThemedText>
-              <ThemedText style={styles.earningsLabel}>Available to Claim</ThemedText>
-            </View>
-          </View>
-          
-          <TouchableOpacity 
-            style={[
-              styles.claimButton,
-              (isClaimSubmitted || claimLoading || teacherData.claimableAmount === 0) && styles.disabledClaimButton
-            ]}
-            onPress={handleClaim}
-            disabled={isClaimSubmitted || claimLoading || teacherData.claimableAmount === 0}
-          >
-            {claimLoading ? (
-              <ActivityIndicator size="small" color="#FFFFFF" style={styles.claimButtonIcon} />
-            ) : (
-              <FontAwesome name="money" size={18} color="#FFFFFF" style={styles.claimButtonIcon} />
-            )}
-            <ThemedText style={styles.claimButtonText}>
-              {claimLoading ? "Submitting..." : isClaimSubmitted ? "Claim Submitted" : "Claim Earnings"}
-            </ThemedText>
-          </TouchableOpacity>
-        </ThemedView>
 
         {/* Students List */}
         <ThemedView style={styles.studentsContainer}>
@@ -294,16 +515,7 @@ export default function TeacherDashboard() {
                   </View>
                 </View>
               </View>
-              <View style={styles.studentStats}>
-                <View style={styles.studentStat}>
-                  <ThemedText style={styles.statValue}>{student.completedLessons}</ThemedText>
-                  <ThemedText style={styles.statLabel}>Lessons</ThemedText>
-                </View>
-                <View style={styles.studentStat}>
-                  <ThemedText style={styles.statValue}>{formatCurrency(student.earnings)}</ThemedText>
-                  <ThemedText style={styles.statLabel}>Earnings</ThemedText>
-                </View>
-              </View>
+              
             </View>
             ))
           )}
@@ -427,6 +639,148 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
+  profileCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 15,
+    padding: 20,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    borderLeftWidth: 4,
+    borderLeftColor: '#dc2929',
+  },
+  profileHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  profileHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  profileHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  editButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(220, 41, 41, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileGrid: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 12,
+  },
+  profileField: {
+    flex: 1,
+  },
+  profileLabel: {
+    fontSize: 12,
+    color: '#dc2929',
+    marginBottom: 4,
+    fontWeight: '600',
+  },
+  profileValue: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333333',
+  },
+  profileInfoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  profileInfoField: {
+    width: '48%',
+  },
+  editForm: {
+    gap: 20,
+  },
+  formSection: {
+    gap: 16,
+  },
+  formSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#dc2929',
+    marginBottom: 8,
+    borderBottomWidth: 2,
+    borderBottomColor: '#dc2929',
+    paddingBottom: 8,
+  },
+  formGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  formField: {
+    width: '48%',
+  },
+  inputGroup: {
+    gap: 8,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#dc2929',
+  },
+  textInput: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: '#333333',
+    borderWidth: 1.5,
+    borderColor: '#dc2929',
+  },
+  textAreaInput: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  editActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 8,
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: '#E8E8E8',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#666666',
+  },
+  saveButton: {
+    flex: 1,
+    backgroundColor: '#dc2929',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  disabledButton: {
+    opacity: 0.6,
+  },
+  saveButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
   referralHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -436,7 +790,8 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#333333',
+    color: '#dc2929',
+    marginLeft: 8,
   },
   sectionSubtitle: {
     fontSize: 14,

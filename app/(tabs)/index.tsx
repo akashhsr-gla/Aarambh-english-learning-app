@@ -51,12 +51,26 @@ export default function HomeScreen() {
           }
         }
         
+        const totalParticipants =
+          (rankInfo && (rankInfo.totalStudents || rankInfo.totalParticipants || rankInfo.total || rankInfo.participants)) ||
+          0;
+        const rankNumber = rankInfo?.user?.rank;
+        const computedRankText = typeof rankNumber === 'number'
+          ? `#${rankNumber}${totalParticipants ? ` / ${totalParticipants}` : ''}`
+          : (user.role === 'student' ? 'Unranked' : 'N/A');
+        const pointsVal = (
+          rankInfo?.user?.totalScore ??
+          rankInfo?.user?.statistics?.totalScore ??
+          rankInfo?.user?.statistics?.totalSessions ??
+          0
+        );
+
         const userData = {
           name: user.name || 'User',
           playerCode: user._id ? `#${user._id.slice(-6).toUpperCase()}` : '#000000',
-          points: rankInfo ? rankInfo.statistics?.totalScore || 0 : (user.studentInfo?.totalPoints || 0),
+          points: Math.floor(Number(pointsVal) || 0),
           region: user.region?.name || 'No Region',
-          rank: rankInfo ? `#${rankInfo.rank}` : (user.role === 'student' ? 'Unranked' : 'N/A')
+          rank: computedRankText
         };
         
         setUserData(userData);
@@ -150,6 +164,10 @@ export default function HomeScreen() {
             <View style={styles.points}>
               <FontAwesome name="trophy" size={16} color="#FFD700" />
               <ThemedText style={styles.statsText}>Rank: {userData.rank}</ThemedText>
+            </View>
+            <View style={styles.score}>
+              <FontAwesome name="star" size={16} color="#dc2929" />
+              <ThemedText style={styles.statsText}>Points: {userData.points}</ThemedText>
             </View>
             <View style={styles.region}>
               <FontAwesome name="map-marker" size={16} color="#226cae" />
@@ -316,9 +334,9 @@ export default function HomeScreen() {
           </View>
           <View style={styles.notificationContent}>
             <ThemedText style={styles.notificationTitle}>Daily Goal</ThemedText>
-            <ThemedText style={styles.notificationText}>Complete today's daily challenge to maintain your streak! 🔥</ThemedText>
+            <ThemedText style={styles.notificationText}>Complete your daily goals to elevate your rank!</ThemedText>
           </View>
-          <TouchableOpacity style={styles.notificationAction}>
+          <TouchableOpacity style={styles.notificationAction} onPress={() => navigation.navigate('GameScreen' as never)}>
             <FontAwesome name="arrow-right" size={16} color="#FFFFFF" />
           </TouchableOpacity>
       </ThemedView>
@@ -328,9 +346,9 @@ export default function HomeScreen() {
           </View>
           <View style={styles.notificationContent}>
             <ThemedText style={styles.notificationTitle}>Daily Goal</ThemedText>
-            <ThemedText style={styles.notificationText}>Your position in the leaderboard is {userData.rank}!</ThemedText>
+            <ThemedText style={styles.notificationText}>Learn English with Tutorials by Experts!</ThemedText>
           </View>
-          <TouchableOpacity style={styles.notificationAction}>
+          <TouchableOpacity style={styles.notificationAction} onPress={() => navigation.navigate('LearnScreen' as never)}>
             <FontAwesome name="arrow-right" size={16} color="#FFFFFF" />
           </TouchableOpacity>
       </ThemedView>
@@ -398,6 +416,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   points: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  score: {
     flexDirection: 'row',
     alignItems: 'center',
   },

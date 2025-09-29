@@ -21,7 +21,6 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [referralCode, setReferralCode] = useState('');
   const [region, setRegion] = useState('');
   const [regions, setRegions] = useState<{_id: string; name: string}[]>([]);
   const [showPassword, setShowPassword] = useState(false);
@@ -177,8 +176,7 @@ export default function LoginScreen() {
         password,
         phone,
         role: isTeacher ? 'teacher' : 'student',
-        region: selectedRegion,
-        referralCode: referralCode || undefined
+        region: selectedRegion
       };
 
       console.log('🚀 Attempting signup with data:', userData);
@@ -236,7 +234,6 @@ export default function LoginScreen() {
     setPassword('');
     setName('');
     setPhone('');
-    setReferralCode('');
     setRegion('');
     setIsRegionDropdownOpen(false);
   };
@@ -431,23 +428,6 @@ export default function LoginScreen() {
               </View>
             )}
             
-            {/* Referral code field for teacher registration */}
-            {isTeacher && !isLogin && (
-              <View style={styles.inputGroup}>
-                <View style={styles.inputIcon}>
-                  <FontAwesome name="ticket" size={18} color="#666666" />
-                </View>
-                <TextInput
-                  style={styles.input}
-                  placeholder="Referral Code (Optional)"
-                  placeholderTextColor="#999999"
-                  value={referralCode}
-                  onChangeText={setReferralCode}
-                  autoCapitalize="characters"
-                />
-              </View>
-            )}
-            
             <View style={styles.inputGroup}>
               <View style={styles.inputIcon}>
                 <FontAwesome name="lock" size={18} color="#666666" />
@@ -492,23 +472,6 @@ export default function LoginScreen() {
               </ThemedText>
             )}
           </TouchableOpacity>
-          
-          <View style={styles.dividerContainer}>
-            <View style={styles.divider} />
-            <ThemedText style={styles.dividerText}>OR</ThemedText>
-            <View style={styles.divider} />
-          </View>
-          
-          <View style={styles.socialButtonsContainer}>
-            <TouchableOpacity style={[styles.socialButton, styles.googleButton]}>
-              <FontAwesome name="google" size={18} color="#FFFFFF" />
-              <ThemedText style={styles.socialButtonText}>Google</ThemedText>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.socialButton, styles.facebookButton]}>
-              <FontAwesome name="facebook" size={18} color="#FFFFFF" />
-              <ThemedText style={styles.socialButtonText}>Facebook</ThemedText>
-            </TouchableOpacity>
-          </View>
           
           <TouchableOpacity style={styles.switchModeButton} onPress={toggleAuthMode}>
             <ThemedText style={styles.switchModeText}>

@@ -108,6 +108,9 @@ export default function PronunciationGame() {
         recording?.stopAndUnloadAsync().catch(console.error);
         recordingRef.current?.stopAndUnloadAsync().catch(console.error);
       }
+      if (sound) {
+        sound.unloadAsync().catch(() => {});
+      }
     };
   }, []);
 
@@ -239,9 +242,13 @@ export default function PronunciationGame() {
     }
     
     try {
+      // Configure audio mode for recording (Android + iOS)
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false
       });
       
       const { recording } = await Audio.Recording.createAsync(
@@ -427,12 +434,32 @@ export default function PronunciationGame() {
     setRecordingStatus("feedback");
     
     // Create a sound object from the recording for playback
-    createSound(uri);
+    await createSound(uri);
   };
 
   const createSound = async (uri: string) => {
-    const { sound } = await Audio.Sound.createAsync({ uri });
-    setSound(sound);
+    try {
+      // Ensure previous sound is released
+      if (sound) {
+        await sound.unloadAsync().catch(() => {});
+        setSound(null);
+      }
+      // Configure audio mode for playback
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false
+      });
+      const result = await Audio.Sound.createAsync(
+        { uri },
+        { shouldPlay: false, volume: 1.0, isLooping: false }
+      );
+      setSound(result.sound);
+    } catch (e) {
+      console.error('Failed to create sound for playback:', e);
+    }
   };
 
   const playRecording = async () => {
@@ -440,7 +467,16 @@ export default function PronunciationGame() {
     
     try {
       setIsPlaying(true);
-      await sound.replayAsync();
+      // Ensure playback mode is active on Android
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false
+      });
+      await sound.setPositionAsync(0);
+      await sound.playAsync();
       sound.setOnPlaybackStatusUpdate((status) => {
         if (status.isLoaded && !status.isPlaying && status.didJustFinish) {
           setIsPlaying(false);
@@ -928,12 +964,12 @@ const styles = StyleSheet.create({
   },
   wordContent: {
     alignItems: 'center',
-    paddingVertical: 20,
+    paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0, 0, 0, 0.05)',
   },
   wordText: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '700',
     color: '#333333',
     marginBottom: 8,

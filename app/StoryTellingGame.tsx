@@ -597,7 +597,7 @@ export default function StoryTellingGame() {
               <View style={styles.feedbackContainer}>
                 <View style={styles.scoreBreakdown}>
                   <ThemedText style={styles.feedbackTitle}>
-                    Your Score {aiEvaluation?.grade && `(Grade: ${aiEvaluation.grade})`}
+                    Your Score {aiEvaluation?.grade ? `(Grade: ${aiEvaluation.grade})` : ''}
                   </ThemedText>
                   
                   {aiEvaluation?.score_breakdown ? (
@@ -652,19 +652,19 @@ export default function StoryTellingGame() {
                     </>
                   )}
                   
-                  {aiEvaluation?.word_count_bonus && (
+                  {aiEvaluation?.word_count_bonus ? (
                     <View style={styles.scoreRow}>
                       <ThemedText style={styles.scoreLabel}>Word Count Bonus:</ThemedText>
                       <ThemedText style={styles.scoreValue}>{aiEvaluation.word_count_bonus}/10</ThemedText>
                     </View>
-                  )}
+                  ) : null}
                   
-                  {aiEvaluation?.time_management_bonus && (
+                  {aiEvaluation?.time_management_bonus ? (
                     <View style={styles.scoreRow}>
                       <ThemedText style={styles.scoreLabel}>Time Management:</ThemedText>
                       <ThemedText style={styles.scoreValue}>{aiEvaluation.time_management_bonus}/5</ThemedText>
                     </View>
-                  )}
+                  ) : null}
                   
                   <View style={styles.totalScoreRow}>
                     <ThemedText style={styles.totalScoreLabel}>Total:</ThemedText>
@@ -682,35 +682,56 @@ export default function StoryTellingGame() {
                   <ThemedText style={styles.feedbackText}>{feedback}</ThemedText>
                 </View>
                 
-                {aiEvaluation?.strengths && aiEvaluation.strengths.length > 0 && (
-                  <View style={styles.aiSection}>
-                    <ThemedText style={styles.aiSectionTitle}>✅ Strengths:</ThemedText>
-                    {aiEvaluation.strengths.map((strength: string, index: number) => (
-                      <ThemedText key={index} style={styles.aiListItem}>• {strength}</ThemedText>
-                    ))}
+                {aiEvaluation?.strengths && aiEvaluation.strengths.length > 0 ? (
+                  <View style={styles.strengthsSection}>
+                    <View style={styles.sectionHeader}>
+                      <FontAwesome name="check-circle" size={16} color="#4CAF50" />
+                      <ThemedText style={styles.sectionTitle}>Strengths</ThemedText>
+                    </View>
+                    <View style={styles.strengthsList}>
+                      {aiEvaluation.strengths.map((strength: string, index: number) => (
+                        <View key={index} style={styles.strengthItem}>
+                          <View style={styles.strengthBullet} />
+                          <ThemedText style={styles.strengthText}>{strength}</ThemedText>
+                        </View>
+                      ))}
+                    </View>
                   </View>
-                )}
+                ) : null}
                 
-                {aiEvaluation?.improvements && aiEvaluation.improvements.length > 0 && (
-                  <View style={styles.aiSection}>
-                    <ThemedText style={styles.aiSectionTitle}>💡 Areas to Improve:</ThemedText>
-                    {aiEvaluation.improvements.map((improvement: string, index: number) => (
-                      <ThemedText key={index} style={styles.aiListItem}>• {improvement}</ThemedText>
-                    ))}
+                {aiEvaluation?.improvements && aiEvaluation.improvements.length > 0 ? (
+                  <View style={styles.improvementsSection}>
+                    <View style={styles.sectionHeader}>
+                      <FontAwesome name="exclamation-triangle" size={16} color="#dc2929" />
+                      <ThemedText style={styles.sectionTitle}>Areas to Improve</ThemedText>
+                    </View>
+                    <View style={styles.improvementsList}>
+                      {aiEvaluation.improvements.map((improvement: string, index: number) => (
+                        <View key={index} style={styles.improvementItem}>
+                          <View style={styles.improvementBullet} />
+                          <ThemedText style={styles.improvementText}>{improvement}</ThemedText>
+                        </View>
+                      ))}
+                    </View>
                   </View>
-                )}
+                ) : null}
                 
-                {aiEvaluation?.detailed_analysis && (
-                  <View style={styles.aiSection}>
-                    <ThemedText style={styles.aiSectionTitle}>🔍 Detailed Analysis:</ThemedText>
-                    {Object.entries(aiEvaluation.detailed_analysis).map(([key, value]: [string, any]) => (
-                      <View key={key} style={styles.analysisItem}>
-                        <ThemedText style={styles.analysisLabel}>{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}:</ThemedText>
-                        <ThemedText style={styles.analysisValue}>{value}</ThemedText>
-                      </View>
-                    ))}
+                {aiEvaluation?.detailed_analysis ? (
+                  <View style={styles.analysisSection}>
+                    <View style={styles.sectionHeader}>
+                      <FontAwesome name="search" size={16} color="#226cae" />
+                      <ThemedText style={styles.sectionTitle}>Detailed Analysis</ThemedText>
+                    </View>
+                    <View style={styles.analysisList}>
+                      {Object.entries(aiEvaluation.detailed_analysis).map(([key, value]: [string, any]) => (
+                        <View key={key} style={styles.analysisItem}>
+                          <ThemedText style={styles.analysisLabel}>{key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</ThemedText>
+                          <ThemedText style={styles.analysisValue}>{value}</ThemedText>
+                        </View>
+                      ))}
+                    </View>
                   </View>
-                )}
+                ) : null}
                 
                 <TouchableOpacity style={styles.nextButton} onPress={moveToNextStory}>
                   <ThemedText style={styles.nextButtonText}>
@@ -1126,36 +1147,113 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
   },
-  aiSection: {
+  // Section Headers
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#333333',
+    marginLeft: 8,
+  },
+  
+  // Strengths Section
+  strengthsSection: {
+    marginBottom: 16,
+    backgroundColor: 'rgba(76, 175, 80, 0.05)',
+    borderRadius: 10,
+    padding: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#4CAF50',
+  },
+  strengthsList: {
+    gap: 8,
+  },
+  strengthItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  strengthBullet: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#4CAF50',
+    marginTop: 6,
+    marginRight: 12,
+  },
+  strengthText: {
+    fontSize: 14,
+    color: '#2E7D32',
+    lineHeight: 20,
+    flex: 1,
+  },
+  
+  // Improvements Section
+  improvementsSection: {
+    marginBottom: 16,
+    backgroundColor: 'rgba(220, 41, 41, 0.05)',
+    borderRadius: 10,
+    padding: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#dc2929',
+  },
+  improvementsList: {
+    gap: 8,
+  },
+  improvementItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  improvementBullet: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#dc2929',
+    marginTop: 6,
+    marginRight: 12,
+  },
+  improvementText: {
+    fontSize: 14,
+    color: '#C62828',
+    lineHeight: 20,
+    flex: 1,
+  },
+  
+  // Analysis Section
+  analysisSection: {
     marginBottom: 16,
     backgroundColor: 'rgba(34, 108, 174, 0.05)',
-    borderRadius: 8,
-    padding: 12,
+    borderRadius: 10,
+    padding: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#226cae',
   },
-  aiSectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333333',
-    marginBottom: 8,
-  },
-  aiListItem: {
-    fontSize: 13,
-    color: '#666666',
-    lineHeight: 18,
-    marginBottom: 4,
+  analysisList: {
+    gap: 12,
   },
   analysisItem: {
-    marginBottom: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    borderRadius: 8,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 108, 174, 0.1)',
   },
   analysisLabel: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#333333',
-    marginBottom: 2,
+    color: '#226cae',
+    marginBottom: 6,
+    textTransform: 'capitalize',
   },
   analysisValue: {
     fontSize: 13,
-    color: '#666666',
+    color: '#555555',
     lineHeight: 18,
     fontStyle: 'italic',
   },

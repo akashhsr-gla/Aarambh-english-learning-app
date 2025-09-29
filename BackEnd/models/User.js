@@ -240,13 +240,47 @@ userSchema.pre('save', async function(next) {
   }
 });
 
-// Pre-save middleware to generate referral code for teachers
+// Pre-save middleware to generate a unique 6-digit referral code for teachers
 userSchema.pre('save', async function(next) {
-  if (this.role === 'teacher' && !this.teacherInfo.referralCode) {
-    const { v4: uuidv4 } = require('uuid');
-    this.teacherInfo.referralCode = uuidv4().substring(0, 8).toUpperCase();
+  try {
+    if (this.role === 'teacher') {
+      // Initialize teacherInfo if it doesn't exist
+      if (!this.teacherInfo) {
+        this.teacherInfo = {};
+      }
+      
+      // TEMPORARY: Auto-approve all teachers by default (comment this out later for manual approval)
+      if (this.teacherInfo.isApproved === undefined || this.teacherInfo.isApproved === false) {
+        this.teacherInfo.isApproved = true;
+      }
+      
+      // Generate referral code if not already set
+      if (!this.teacherInfo.referralCode) {
+        // Helper to generate 6-digit numeric code
+        const generateCode = () => Math.floor(100000 + Math.random() * 900000).toString();
+
+        // Try a few times to keep uniqueness across users
+        let attempts = 0;
+        while (attempts < 5) {
+          const code = generateCode();
+          const existing = await mongoose.model('User').findOne({ 'teacherInfo.referralCode': code }).lean();
+          if (!existing) {
+            this.teacherInfo.referralCode = code;
+            break;
+          }
+          attempts += 1;
+        }
+
+        // Fallback if still unset
+        if (!this.teacherInfo.referralCode) {
+          this.teacherInfo.referralCode = generateCode();
+        }
+      }
+    }
+    next();
+  } catch (err) {
+    next(err);
   }
-  next();
 });
 
 // Method to compare password

@@ -1,5 +1,6 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Animated, Dimensions, Modal, Platform, StatusBar, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { authAPI } from '../app/services/api';
@@ -55,6 +56,16 @@ export default function Sidebar({ visible, onClose }: SidebarProps) {
     }
   };
 
+  const animateOutAndClose = () => {
+    Animated.timing(slideAnim, {
+      toValue: SIDEBAR_WIDTH,
+      duration: 250,
+      useNativeDriver: true,
+    }).start(() => {
+      onClose();
+    });
+  };
+
   const handleLogout = async () => {
     try {
       await authAPI.logout();
@@ -70,6 +81,11 @@ export default function Sidebar({ visible, onClose }: SidebarProps) {
 
   const navigateToScreen = (screenName: string) => {
     onClose();
+    if (screenName === 'home') {
+      // Use expo-router to ensure navigating to tabs root
+      router.push('/(tabs)');
+      return;
+    }
     // @ts-ignore
     navigation.navigate(screenName);
   };
@@ -78,9 +94,9 @@ export default function Sidebar({ visible, onClose }: SidebarProps) {
 
   return (
     
-    <Modal transparent visible={visible} animationType="none" onRequestClose={onClose}>
+    <Modal transparent visible={visible} animationType="none" onRequestClose={animateOutAndClose}>
       <View style={styles.overlay}>
-        <TouchableOpacity style={styles.closeArea} onPress={onClose} />
+        <TouchableOpacity style={styles.closeArea} onPress={animateOutAndClose} />
         <Animated.View 
           style={[
             styles.sidebar,
@@ -89,7 +105,7 @@ export default function Sidebar({ visible, onClose }: SidebarProps) {
         >
           {/* User Profile Section with Close Button */}
           <View style={styles.profileSection}>
-            <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+            <TouchableOpacity style={styles.closeButton} onPress={animateOutAndClose}>
               <FontAwesome name="times" size={24} color="#FFFFFF" />
             </TouchableOpacity>
             
@@ -129,9 +145,17 @@ export default function Sidebar({ visible, onClose }: SidebarProps) {
               <>
                 <TouchableOpacity 
                   style={styles.menuItem}
+                  onPress={() => navigateToScreen('home')}
+                >
+                  <FontAwesome name="home" size={24} color="#226cae" style={styles.menuIcon} />
+                  <ThemedText style={styles.menuText}>Home</ThemedText>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={styles.menuItem}
                   onPress={() => navigateToScreen('ProfileScreen')}
                 >
-                  <FontAwesome name="user-circle" size={24} color="#333333" style={styles.menuIcon} />
+                  <FontAwesome name="user-circle" size={24} color="#dc2929" style={styles.menuIcon} />
                   <ThemedText style={styles.menuText}>Profile</ThemedText>
                 </TouchableOpacity>
 
@@ -169,6 +193,14 @@ export default function Sidebar({ visible, onClose }: SidebarProps) {
                   <ThemedText style={styles.menuText}>Lessons</ThemedText>
                 </TouchableOpacity>
 
+              <TouchableOpacity 
+                style={styles.menuItem}
+                onPress={() => navigateToScreen('PrivacyPolicyScreen')}
+              >
+                <FontAwesome name="shield" size={24} color="#226cae" style={styles.menuIcon} />
+                <ThemedText style={styles.menuText}>Privacy Policy</ThemedText>
+              </TouchableOpacity>
+
                 <TouchableOpacity style={styles.menuItem}>
                   <FontAwesome name="question-circle" size={24} color="#226cae" style={styles.menuIcon} />
                   <ThemedText style={styles.menuText}>Help</ThemedText>
@@ -176,6 +208,22 @@ export default function Sidebar({ visible, onClose }: SidebarProps) {
               </>
             ) : (
               <>
+                <TouchableOpacity 
+                  style={styles.menuItem}
+                  onPress={() => navigateToScreen('home')}
+                >
+                  <FontAwesome name="home" size={24} color="#226cae" style={styles.menuIcon} />
+                  <ThemedText style={styles.menuText}>Home</ThemedText>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={styles.menuItem}
+                  onPress={() => navigateToScreen('PrivacyPolicyScreen')}
+                >
+                  <FontAwesome name="shield" size={24} color="#226cae" style={styles.menuIcon} />
+                  <ThemedText style={styles.menuText}>Privacy Policy</ThemedText>
+                </TouchableOpacity>
+
                 <TouchableOpacity 
                   style={styles.menuItem}
                   onPress={() => navigateToScreen('LoginScreen')}

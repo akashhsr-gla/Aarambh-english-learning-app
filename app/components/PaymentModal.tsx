@@ -1,5 +1,6 @@
 import { FontAwesome } from '@expo/vector-icons';
 import Constants from 'expo-constants';
+import { Image } from 'expo-image';
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
@@ -8,22 +9,19 @@ import {
   Modal,
   Platform,
   StyleSheet,
+  TextInput,
   TouchableOpacity,
   View
 } from 'react-native';
+import RazorpayCheckout from 'react-native-razorpay';
 import { ThemedText } from '../../components/ThemedText';
 import { ThemedView } from '../../components/ThemedView';
-import { transactionsAPI } from '../services/api';
-// Optional: If react-native-razorpay is installed, we can require it dynamically
-let RazorpayCheckout: any = null;
-try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  RazorpayCheckout = require('react-native-razorpay');
-} catch (e) {
-  RazorpayCheckout = null;
-}
+import { referralsAPI, transactionsAPI } from '../services/api';
+// Using static import ensures the native module is linked at build time
 
 const { width, height } = Dimensions.get('window');
+
+const razorpayPng = require('../../website/public/razorpay-icon.png');
 
 interface PaymentPlan {
   id?: string;
@@ -52,6 +50,9 @@ export default function PaymentModal({
 }: PaymentModalProps) {
   const [loading, setLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<'razorpay' | 'other'>('razorpay');
+  const [referralCode, setReferralCode] = useState('');
+  const [referralDiscount, setReferralDiscount] = useState<any>(null);
+  const [validatingReferral, setValidatingReferral] = useState(false);
 
   const loadRazorpayScriptIfNeeded = async () => {
     if (typeof document === 'undefined') return false;
@@ -66,19 +67,70 @@ export default function PaymentModal({
     });
   };
 
+  const validateReferralCode = async () => {
+    if (!referralCode.trim() || !plan) return;
+    
+    setValidatingReferral(true);
+    try {
+      const response = await referralsAPI.validateReferralCode({
+        referralCode: referralCode.trim(),
+        amount: plan.price
+      });
+      
+      if (response.success && response.data.isValid) {
+        setReferralDiscount(response.data.referral);
+      } else {
+        setReferralDiscount(null);
+        Alert.alert('Invalid Code', response.message || 'Invalid referral code');
+      }
+    } catch (error) {
+      setReferralDiscount(null);
+      Alert.alert('Error', 'Failed to validate referral code');
+    } finally {
+      setValidatingReferral(false);
+    }
+  };
+
+  const removeReferralCode = () => {
+    setReferralCode('');
+    setReferralDiscount(null);
+  };
+
   const handlePayment = async () => {
     if (!plan) return;
 
     setLoading(true);
     try {
-      // Create Razorpay order via backend API
-      const orderResp = await transactionsAPI.createOrder({ planId: (plan.id || plan._id) });
+      // Create Razorpay order via backend API with referral code if available
+      const orderData: any = { planId: (plan.id || plan._id) };
+      if (referralDiscount) {
+        orderData.referralCode = referralCode.trim();
+      }
+      
+      const orderResp = await transactionsAPI.createOrder(orderData);
       if (!orderResp.success) throw new Error(orderResp.message || 'Failed to create order');
       const { orderId, amount, currency, transactionId } = orderResp.data;
 
       // Initialize Razorpay
+      const resolvedKey =
+        (process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID as string) ||
+        ((Constants as any)?.expoConfig?.extra?.razorpayKeyId as string) ||
+        ((Constants as any)?.manifestExtra?.razorpayKeyId as string) ||
+        ((Constants as any)?.manifest?.extra?.razorpayKeyId as string) ||
+        '';
+
+      // Debug log for key and order
+      // eslint-disable-next-line no-console
+      console.log('🔑 Razorpay key resolved:', resolvedKey ? `${resolvedKey.slice(0, 6)}***` : 'EMPTY');
+      // eslint-disable-next-line no-console
+      console.log('🧾 Razorpay order:', { orderId, amount, currency, transactionId });
+
+      if (!resolvedKey || !resolvedKey.startsWith('rzp_')) {
+        throw new Error('Razorpay key not set. Set EXPO_PUBLIC_RAZORPAY_KEY_ID or app.json extra.razorpayKeyId');
+      }
+
       const options: any = {
-        key: (process.env.EXPO_PUBLIC_RAZORPAY_KEY_ID as string) || (Constants?.expoConfig?.extra as any)?.razorpayKeyId || 'rzp_test_placeholder',
+        key: resolvedKey,
         amount: Math.round((amount || plan.price) * 100),
         currency: currency || 'INR',
         name: 'Aarambh App',
@@ -123,6 +175,8 @@ export default function PaymentModal({
       // Prefer native Razorpay on RN; fallback to web only on web platform
       if (RazorpayCheckout && typeof RazorpayCheckout.open === 'function') {
         try {
+          // eslint-disable-next-line no-console
+          console.log('🧭 Opening Razorpay native SDK with options');
           const rnResponse = await RazorpayCheckout.open(options);
           // RN returns { razorpay_payment_id, razorpay_order_id, razorpay_signature }
           const verifyData = await transactionsAPI.verifyPayment({
@@ -139,6 +193,8 @@ export default function PaymentModal({
           }
         } catch (e) {
           setLoading(false);
+          // eslint-disable-next-line no-console
+          console.log('❌ Razorpay native open error:', e);
           onPaymentError('Payment cancelled or failed');
         }
       } else if (Platform.OS === 'web') {
@@ -169,31 +225,77 @@ export default function PaymentModal({
       <View style={styles.overlay}>
         <ThemedView style={styles.modalContainer}>
           <View style={styles.header}>
-            <ThemedText style={styles.title}>Complete Payment</ThemedText>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Image source={razorpayPng} style={{ width: 16, height: 16 }} contentFit="contain" />
+              <ThemedText style={styles.title}>Secure Checkout</ThemedText>
+            </View>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <FontAwesome name="times" size={20} color="#666" />
+              <FontAwesome name="times" size={16} color="#666" />
             </TouchableOpacity>
           </View>
 
           <View style={styles.planDetails}>
-            <ThemedText style={styles.planName}>{plan.name}</ThemedText>
-            <ThemedText style={styles.planPrice}>₹{plan.price}</ThemedText>
+            <View style={styles.planHeader}>
+              <ThemedText style={styles.planName}>{plan.name}</ThemedText>
+              <ThemedText style={styles.planPrice}>₹{plan.price}</ThemedText>
+            </View>
             <ThemedText style={styles.planDescription}>{plan.description}</ThemedText>
             
             <View style={styles.featuresContainer}>
               <ThemedText style={styles.featuresTitle}>Features included:</ThemedText>
-              {plan.features.map((feature, index) => {
-                const text = typeof feature === 'string' 
-                  ? feature 
-                  : (feature.name || feature.description || 'Feature');
-                return (
-                  <View key={index} style={styles.featureItem}>
-                    <FontAwesome name="check" size={14} color="#4CAF50" />
-                    <ThemedText style={styles.featureText}>{text}</ThemedText>
-                  </View>
-                );
-              })}
+              <View style={styles.featuresChips}>
+                {plan.features.map((feature, index) => {
+                  const text = typeof feature === 'string' 
+                    ? feature 
+                    : (feature.name || feature.description || 'Feature');
+                  return (
+                    <View key={index} style={styles.featureChip}>
+                      <ThemedText style={styles.featureChipText}>{text}</ThemedText>
+                    </View>
+                  );
+                })}
+              </View>
             </View>
+          </View>
+
+          {/* Referral Code Section */}
+          <View style={styles.referralContainer}>
+            <ThemedText style={styles.referralTitle}>Have a referral code?</ThemedText>
+            <View style={styles.referralInputContainer}>
+              <TextInput
+                style={styles.referralInput}
+                placeholder="Enter referral code"
+                value={referralCode}
+                onChangeText={setReferralCode}
+                autoCapitalize="characters"
+                placeholderTextColor="#999"
+              />
+              <TouchableOpacity
+                style={[styles.validateButton, validatingReferral && styles.validateButtonDisabled]}
+                onPress={validateReferralCode}
+                disabled={validatingReferral || !referralCode.trim()}
+              >
+                {validatingReferral ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <ThemedText style={styles.validateButtonText}>Apply</ThemedText>
+                )}
+              </TouchableOpacity>
+            </View>
+            
+            {referralDiscount && (
+              <View style={styles.discountContainer}>
+              
+                <View style={styles.discountRow}>
+                  <ThemedText style={styles.discountLabel}>Teacher:</ThemedText>
+                  <ThemedText style={styles.discountTeacher}>{referralDiscount.teacher?.name}</ThemedText>
+                </View>
+                <TouchableOpacity onPress={removeReferralCode} style={styles.removeDiscountButton}>
+                  <FontAwesome name="times" size={12} color="#dc2929" />
+                  <ThemedText style={styles.removeDiscountText}>Remove</ThemedText>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
 
           <View style={styles.paymentMethodContainer}>
@@ -205,7 +307,7 @@ export default function PaymentModal({
               ]}
               onPress={() => setPaymentMethod('razorpay')}
             >
-              <FontAwesome name="credit-card" size={20} color="#226cae" />
+              <Image source={razorpayPng} style={{ width: 16, height: 16 }} contentFit="contain" />
               <ThemedText style={styles.paymentMethodText}>Razorpay (Cards, UPI, Net Banking)</ThemedText>
               {paymentMethod === 'razorpay' && (
                 <FontAwesome name="check-circle" size={20} color="#4CAF50" />
@@ -214,10 +316,28 @@ export default function PaymentModal({
           </View>
 
           <View style={styles.totalContainer}>
+            <View style={styles.totalRow}>
+              <ThemedText style={styles.totalLabel}>Original Price:</ThemedText>
+              <ThemedText style={styles.totalValue}>₹{plan.price}</ThemedText>
+            </View>
+            
+            {referralDiscount && (
+              <View style={styles.totalRow}>
+                <ThemedText style={styles.totalLabel}>Discount ({referralDiscount.discountPercentage}%):</ThemedText>
+                <ThemedText style={[styles.totalValue, styles.discountValue]}>-₹{referralDiscount.discountAmount}</ThemedText>
+              </View>
+            )}
+            
             <View style={[styles.totalRow, styles.finalTotal]}>
               <ThemedText style={styles.finalTotalLabel}>Amount Payable:</ThemedText>
-              <ThemedText style={styles.finalTotalValue}>₹{plan.price}</ThemedText>
+              <ThemedText style={styles.finalTotalValue}>
+                ₹{referralDiscount ? referralDiscount.finalAmount : plan.price}
+              </ThemedText>
             </View>
+          </View>
+          <View style={styles.poweredByRow}>
+            <ThemedText style={styles.poweredByText}>Powered by Razorpay</ThemedText>
+            <Image source={razorpayPng} style={{ width: 16, height: 16 }} contentFit="contain" />
           </View>
 
           <TouchableOpacity
@@ -229,15 +349,17 @@ export default function PaymentModal({
               <ActivityIndicator color="#FFFFFF" />
             ) : (
               <>
-                <FontAwesome name="credit-card" size={16} color="#FFFFFF" />
-                <ThemedText style={styles.payButtonText}>Pay ₹{plan.price}</ThemedText>
+                
+                <ThemedText style={styles.payButtonText}>
+                  Pay ₹{referralDiscount ? referralDiscount.finalAmount : plan.price}
+                </ThemedText>
               </>
             )}
           </TouchableOpacity>
 
-          <ThemedText style={styles.securityNote}>
-            <FontAwesome name="lock" size={12} color="#4CAF50" /> Your payment is secure and encrypted
-          </ThemedText>
+         
+
+       
         </ThemedView>
       </View>
     </Modal>
@@ -252,20 +374,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modalContainer: {
-    width: width * 0.9,
-    maxHeight: height * 0.8,
+    width: width * 0.95,
+    maxHeight: height * 0.84,
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 20,
+    borderRadius: 15,
+    padding: 15,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 12,
   },
   title: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
   },
@@ -273,106 +395,118 @@ const styles = StyleSheet.create({
     padding: 5,
   },
   planDetails: {
-    marginBottom: 20,
+    marginBottom: 12,
+  },
+  planHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
   },
   planName: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
-    marginBottom: 5,
+    flex: 1,
   },
   planPrice: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#226cae',
-    marginBottom: 10,
   },
   planDescription: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666',
-    marginBottom: 15,
-  },
-  featuresContainer: {
-    marginTop: 10,
-  },
-  featuresTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 10,
-  },
-  featureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
     marginBottom: 8,
   },
-  featureText: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 10,
+  featuresContainer: {
+    marginTop: 6,
   },
-  paymentMethodContainer: {
-    marginBottom: 20,
-  },
-  paymentMethodTitle: {
-    fontSize: 16,
+  featuresTitle: {
+    fontSize: 13,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 10,
+    marginBottom: 6,
+  },
+  featuresChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+  },
+  featureChip: {
+    backgroundColor: '#F4F7FB',
+    borderWidth: 1,
+    borderColor: '#E0E8F4',
+    paddingVertical: 3,
+    paddingHorizontal: 6,
+    borderRadius: 10,
+  },
+  featureChipText: {
+    fontSize: 10,
+    color: '#333',
+  },
+  paymentMethodContainer: {
+    marginBottom: 12,
+  },
+  paymentMethodTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 6,
   },
   paymentMethodOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 15,
+    padding: 10,
     borderWidth: 1,
     borderColor: '#E0E0E0',
-    borderRadius: 10,
-    marginBottom: 10,
+    borderRadius: 8,
+    marginBottom: 6,
   },
   selectedPaymentMethod: {
     borderColor: '#226cae',
     backgroundColor: '#F0F8FF',
   },
   paymentMethodText: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#333',
-    marginLeft: 10,
+    marginLeft: 8,
     flex: 1,
   },
   totalContainer: {
     backgroundColor: '#F8F9FA',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 20,
+    padding: 10,
+    borderRadius: 8,
+    marginBottom: 12,
   },
   totalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   totalLabel: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666',
   },
   totalValue: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#333',
     fontWeight: '500',
   },
   finalTotal: {
     borderTopWidth: 1,
     borderTopColor: '#E0E0E0',
-    paddingTop: 8,
-    marginTop: 8,
+    paddingTop: 6,
+    marginTop: 6,
   },
   finalTotalLabel: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
     color: '#333',
   },
   finalTotalValue: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
     color: '#226cae',
   },
@@ -381,22 +515,127 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 15,
-    borderRadius: 10,
-    marginBottom: 10,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8,
   },
   payButtonDisabled: {
     backgroundColor: '#B0B0B0',
   },
   payButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: 'bold',
-    marginLeft: 10,
+    marginLeft: 8,
   },
-  securityNote: {
+  poweredByRow: {
+    marginTop: 4,
+    marginBottom: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  poweredByText: {
+    fontSize: 10,
+    color: '#666',
+  },
+  trustRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  trustItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  trustText: {
+    fontSize: 12,
+    color: '#666',
+  },
+  referralContainer: {
+    marginBottom: 12,
+  },
+  referralTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 6,
+  },
+  referralInputContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 6,
+  },
+  referralInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    fontSize: 12,
+    color: '#333',
+    backgroundColor: '#FFFFFF',
+  },
+  validateButton: {
+    backgroundColor: '#226cae',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 60,
+  },
+  validateButtonDisabled: {
+    backgroundColor: '#B0B0B0',
+  },
+  validateButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  discountContainer: {
+    backgroundColor: '#E8F5E8',
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+    borderRadius: 6,
+    padding: 8,
+    marginTop: 6,
+  },
+  discountRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  discountLabel: {
+    fontSize: 12,
+    color: '#333',
+    fontWeight: '500',
+  },
+  discountValue: {
     fontSize: 12,
     color: '#4CAF50',
-    textAlign: 'center',
+    fontWeight: 'bold',
+  },
+  discountTeacher: {
+    fontSize: 12,
+    color: '#226cae',
+    fontWeight: '500',
+  },
+  removeDiscountButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+    marginTop: 4,
+    gap: 3,
+  },
+  removeDiscountText: {
+    fontSize: 10,
+    color: '#dc2929',
+    fontWeight: '500',
   },
 });

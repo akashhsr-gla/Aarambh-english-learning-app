@@ -25,10 +25,11 @@ router.get('/subscription', authenticateToken, async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    // Get subscription status
-    const subscriptionStatus = user.studentInfo?.subscriptionStatus || 'inactive';
+    // Derive subscription status from existing schema fields
     const currentPlan = user.studentInfo?.currentPlan;
-    const subscriptionExpiry = user.studentInfo?.subscriptionExpiry;
+    const planExpiryDate = user.studentInfo?.planExpiryDate;
+    const isActive = planExpiryDate && planExpiryDate > new Date();
+    const subscriptionStatus = isActive ? 'active' : 'inactive';
 
     // Get transaction history
     const transactions = await Transaction.find({ user: req.user.id })
@@ -41,7 +42,7 @@ router.get('/subscription', authenticateToken, async (req, res) => {
       data: {
         subscriptionStatus,
         currentPlan,
-        subscriptionExpiry,
+        subscriptionExpiry: planExpiryDate,
         transactions
       }
     });
@@ -107,20 +108,53 @@ router.post('/create-order', authenticateToken, [
     let referralDiscount = null;
 
     if (referralCode) {
-      const referral = await Referral.findOne({ 
+      // First check Referral collection (admin-created referrals)
+      let referral = await Referral.findOne({ 
         referralCode, 
-        isActive: true 
+        isActive: true,
+        isApproved: true
       }).populate('teacher', 'name email');
 
+      let teacher = null;
+      let discountPercentage = 25; // Default discount
+
       if (referral) {
-        discountAmount = (plan.price * referral.discountPercentage) / 100;
+        teacher = referral.teacher;
+        discountPercentage = referral.discountPercentage;
+      } else {
+        // Check User collection for teacher's auto-generated referral code
+        // TEMPORARY: Comment out isApproved check for testing (uncomment later for manual approval)
+        const teacherUser = await User.findOne({
+          'teacherInfo.referralCode': { $regex: new RegExp(`^${referralCode}$`, 'i') },
+          role: 'teacher'
+          // 'teacherInfo.isApproved': true  // Commented out temporarily
+        }).select('name email');
+
+        if (teacherUser) {
+          teacher = {
+            _id: teacherUser._id,
+            name: teacherUser.name,
+            email: teacherUser.email
+          };
+          discountPercentage = 25; // Default discount for teacher codes
+        }
+      }
+
+      if (teacher) {
+        discountAmount = Math.min(
+          (plan.price * discountPercentage) / 100,
+          1000 // Default max discount
+        );
         finalAmount = plan.price - discountAmount;
         referralDiscount = {
           code: referralCode,
-          discountPercentage: referral.discountPercentage,
+          discountPercentage,
           discountAmount,
-          teacherName: referral.teacher.name
+          teacherName: teacher.name
         };
+        // Store who referred and the discount on the transaction record
+        var referralTeacherId = teacher._id;
+        var referralPercent = discountPercentage;
       }
     }
 
@@ -158,6 +192,8 @@ router.post('/create-order', authenticateToken, [
       finalAmount,
       discountAmount,
       referralCode: referralCode || null,
+      referredBy: referralTeacherId || null,
+      discountPercentage: referralPercent || 0,
       razorpayOrderId: order.id,
       status: 'pending',
       paymentMethod: 'razorpay'
@@ -267,17 +303,23 @@ router.post('/verify-payment', authenticateToken, [
       return res.status(400).json({ success: false, message: 'Plan not found' });
     }
 
-    // Calculate subscription expiry
-    const subscriptionExpiry = new Date();
-    subscriptionExpiry.setDate(subscriptionExpiry.getDate() + plan.duration);
+    // Calculate plan expiry date using existing schema field
+    const planExpiryDate = new Date();
+    // Duration is in months in your plans; if so, convert appropriately.
+    // Fallback: treat as days when durationType absent.
+    if (plan.durationType === 'months') {
+      planExpiryDate.setMonth(planExpiryDate.getMonth() + (plan.duration || 1));
+    } else if (plan.durationType === 'days') {
+      planExpiryDate.setDate(planExpiryDate.getDate() + (plan.duration || 30));
+    } else {
+      // default to months if not specified
+      planExpiryDate.setMonth(planExpiryDate.getMonth() + (plan.duration || 1));
+    }
 
     user.studentInfo = {
       ...user.studentInfo,
       currentPlan: plan._id,
-      subscriptionStatus: 'active',
-      subscriptionExpiry,
-      subscriptionStartDate: new Date(),
-      lastPaymentDate: new Date()
+      planExpiryDate,
     };
 
     await user.save();
@@ -296,11 +338,7 @@ router.post('/verify-payment', authenticateToken, [
     res.json({
       success: true,
       message: 'Payment verified and subscription activated',
-      data: {
-        transactionId: transaction._id,
-        subscriptionExpiry,
-        plan: plan.name
-      }
+      data: { transactionId: transaction._id, planExpiryDate, plan: plan.name }
     });
   } catch (error) {
     console.error('Verify payment error:', error);

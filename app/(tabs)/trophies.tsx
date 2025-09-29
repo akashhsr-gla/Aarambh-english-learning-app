@@ -1,4 +1,6 @@
 import { FontAwesome } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
@@ -10,8 +12,8 @@ import { authAPI, leaderboardAPI, sessionsAPI } from '../services/api';
 interface RegionData {
   name: string;
   totalPlayers: number;
-  onlineNow: number;
-  userRank: string;
+  rankText: string;
+  points: number;
 }
 
 interface ActivityStats {
@@ -32,12 +34,13 @@ interface PlayerData {
 }
 
 export default function TrophiesScreen() {
+  const navigation = useNavigation();
   const [loading, setLoading] = useState(true);
   const [regionData, setRegionData] = useState<RegionData>({
     name: 'Loading...',
     totalPlayers: 0,
-    onlineNow: 0,
-    userRank: 'Loading...'
+    rankText: 'Loading...',
+    points: 0
   });
   const [activityStats, setActivityStats] = useState<ActivityStats>({
     chatSessions: 0,
@@ -103,15 +106,18 @@ export default function TrophiesScreen() {
       }
 
       // Update region data
+      const totalStudents = userRankData?.totalStudents || userRankData?.totalPlayersInRegion || 0;
+      const rankNum = userRankData?.user?.rank ?? userRankData?.rank;
+      const points = userRankData?.user?.totalScore ?? userRankData?.user?.statistics?.totalScore ?? 0;
       setRegionData({
         name: user.region.name,
-        totalPlayers: userRankData?.totalPlayersInRegion || 0,
-        onlineNow: Math.floor((userRankData?.totalPlayersInRegion || 0) * 0.1), // Estimated
-        userRank: userRankData ? `#${userRankData.rank}` : (user.role === 'student' ? 'Unranked' : 'N/A')
+        totalPlayers: totalStudents,
+        rankText: typeof rankNum === 'number' ? `${rankNum}` : (user.role === 'student' ? 'Unranked' : 'N/A'),
+        points: Math.floor(Number(points) || 0)
       });
 
       // Calculate activity stats from user data and sessions
-      const stats = userRankData?.statistics || {
+      const stats = userRankData?.user?.statistics || userRankData?.statistics || {
         lecturesWatched: user.studentInfo?.totalLecturesWatched || 0,
         gameSessions: 0,
         communicationSessions: 0,
@@ -136,9 +142,8 @@ export default function TrophiesScreen() {
         const players = leaderboardData.slice(0, 3).map((entry: any, index: number) => ({
           rank: entry.rank,
           name: entry.student.name,
-          level: `Level ${Math.floor(entry.statistics.totalScore / 100) + 1}`,
-          points: entry.statistics.totalScore,
-          trophies: Math.floor(entry.statistics.totalScore / 200) + index + 1
+          points: Math.floor(Number(entry.statistics?.totalScore || entry.totalScore || 0)),
+          trophies: Math.floor((Number(entry.statistics?.totalScore || entry.totalScore || 0)) / 200) + index + 1
         }));
         setTopPlayers(players);
       }
@@ -158,6 +163,13 @@ export default function TrophiesScreen() {
   if (loading) {
     return (
       <View style={[styles.container, styles.centerContent]}>
+        <LinearGradient
+          colors={['rgba(220, 41, 41, 0.15)', 'rgba(255, 255, 255, 1)', 'rgba(255, 255, 255, 1)', 'rgba(34, 108, 174, 0.15)']}
+          locations={[0, 0.25, 0.75, 1]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.gradientBackground}
+        />
         <Header title="Trophies" />
         <ActivityIndicator size="large" color="#dc2929" />
         <ThemedText style={styles.loadingText}>Loading trophies...</ThemedText>
@@ -179,7 +191,14 @@ export default function TrophiesScreen() {
   }
 
   return (
-    <ScrollView style={styles.container}>
+    <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
+      <LinearGradient
+        colors={['rgba(220, 41, 41, 0.15)', 'rgba(255, 255, 255, 1)', 'rgba(255, 255, 255, 1)', 'rgba(34, 108, 174, 0.15)']}
+        locations={[0, 0.25, 0.75, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.gradientBackground}
+      />
       {/* Header */}
       <Header title="Trophies" />
 
@@ -192,7 +211,7 @@ export default function TrophiesScreen() {
       {/* Region Stats Card */}
       <ThemedView style={styles.regionCard}>
         <View style={styles.regionHeader}>
-          <View style={[styles.regionIconContainer, { backgroundColor: '#dc2929' }]}>
+          <View style={[styles.regionIconContainer, { backgroundColor: '#dc2929' }]}> 
             <FontAwesome name="globe" size={24} color="#FFFFFF" />
           </View>
           <ThemedText style={styles.regionTitle}>Your Region: {regionData.name}</ThemedText>
@@ -200,104 +219,30 @@ export default function TrophiesScreen() {
         
         <View style={styles.regionStats}>
           <View style={styles.regionStat}>
-            <ThemedText style={styles.statNumber}>{regionData.totalPlayers.toLocaleString()}</ThemedText>
-            <ThemedText style={styles.statLabel}>Total Players</ThemedText>
-          </View>
-          <View style={[styles.regionDivider, { backgroundColor: 'rgba(220, 41, 41, 0.2)' }]} />
-          <View style={styles.regionStat}>
-            <ThemedText style={[styles.statNumber, { color: '#dc2929' }]}>{regionData.onlineNow}</ThemedText>
-            <ThemedText style={styles.statLabel}>Online Now</ThemedText>
+            <FontAwesome name="trophy" size={16} color="#FFD700" />
+            <ThemedText style={styles.statNumber}>{regionData.rankText}</ThemedText>
+            <ThemedText style={styles.statLabel}>Rank</ThemedText>
           </View>
           <View style={[styles.regionDivider, { backgroundColor: 'rgba(34, 108, 174, 0.2)' }]} />
           <View style={styles.regionStat}>
-            <ThemedText style={[styles.statNumber, { color: '#226cae' }]}>{regionData.userRank}</ThemedText>
-            <ThemedText style={styles.statLabel}>Your Rank</ThemedText>
+            <FontAwesome name="star" size={16} color="#dc2929" />
+            <ThemedText style={[styles.statNumber, { color: '#dc2929' }]}>{regionData.points}</ThemedText>
+            <ThemedText style={styles.statLabel}>Points</ThemedText>
+          </View>
+          <View style={[styles.regionDivider, { backgroundColor: 'rgba(34, 108, 174, 0.2)' }]} />
+          <View style={styles.regionStat}>
+            <FontAwesome name="users" size={16} color="#226cae" />
+            <ThemedText style={[styles.statNumber, { color: '#226cae' }]}>{regionData.totalPlayers.toLocaleString()}</ThemedText>
+            <ThemedText style={styles.statLabel}>Total Players</ThemedText>
           </View>
         </View>
       </ThemedView>
 
-      {/* Activity Stats Section */}
-      <View style={styles.sectionHeader}>
-        <ThemedText style={styles.sectionTitle}>Your Activity</ThemedText>
-        <TouchableOpacity style={styles.viewAllButton}>
-          <ThemedText style={[styles.viewAllText, { color: '#dc2929' }]}>View Stats</ThemedText>
-          <FontAwesome name="angle-right" size={16} color="#dc2929" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Activity Cards */}
-      <View style={styles.activityCardsContainer}>
-        {/* Chat Activity */}
-        <ThemedView style={styles.activityCard}>
-          <View style={[styles.activityIconContainer, { backgroundColor: '#226cae' }]}>
-            <FontAwesome name="comments" size={28} color="#FFFFFF" />
-          </View>
-          <View style={styles.activityContent}>
-            <ThemedText style={styles.activityTitle}>Chat Sessions</ThemedText>
-            <View style={styles.activityProgressBar}>
-              <View style={[styles.activityProgressFill, { width: '65%', backgroundColor: '#226cae' }]} />
-            </View>
-            <View style={styles.activityStats}>
-              <ThemedText style={styles.activityStatText}>
-                <ThemedText style={styles.activityStatHighlight}>{activityStats.chatSessions}</ThemedText> conversations
-              </ThemedText>
-              <ThemedText style={styles.activityStatText}>
-                <ThemedText style={styles.activityStatHighlight}>{activityStats.chatRating}</ThemedText> avg. rating
-              </ThemedText>
-            </View>
-          </View>
-        </ThemedView>
-
-        {/* Game Activity */}
-        <ThemedView style={styles.activityCard}>
-          <View style={[styles.activityIconContainer, { backgroundColor: '#dc2929' }]}>
-            <FontAwesome name="gamepad" size={28} color="#FFFFFF" />
-          </View>
-          <View style={styles.activityContent}>
-            <ThemedText style={styles.activityTitle}>Games Played</ThemedText>
-            <View style={styles.activityProgressBar}>
-              <View style={[styles.activityProgressFill, { width: '80%', backgroundColor: '#dc2929' }]} />
-            </View>
-            <View style={styles.activityStats}>
-              <ThemedText style={styles.activityStatText}>
-                <ThemedText style={styles.activityStatHighlight}>{activityStats.gamesPlayed}</ThemedText> games completed
-              </ThemedText>
-              <ThemedText style={styles.activityStatText}>
-                <ThemedText style={styles.activityStatHighlight}>{activityStats.pointsEarned}</ThemedText> points earned
-              </ThemedText>
-            </View>
-          </View>
-        </ThemedView>
-
-        {/* Learning Activity */}
-        <ThemedView style={styles.activityCard}>
-          <View style={[styles.activityIconContainer, { backgroundColor: '#226cae' }]}>
-            <FontAwesome name="book" size={28} color="#FFFFFF" />
-          </View>
-          <View style={styles.activityContent}>
-            <ThemedText style={styles.activityTitle}>Learning Progress</ThemedText>
-            <View style={styles.activityProgressBar}>
-              <View style={[styles.activityProgressFill, { width: '45%', backgroundColor: '#226cae' }]} />
-            </View>
-            <View style={styles.activityStats}>
-              <ThemedText style={styles.activityStatText}>
-                <ThemedText style={styles.activityStatHighlight}>{activityStats.lessonsCompleted}</ThemedText> lessons completed
-              </ThemedText>
-              <ThemedText style={styles.activityStatText}>
-                <ThemedText style={styles.activityStatHighlight}>{activityStats.newWordsLearned}</ThemedText> new words learned
-              </ThemedText>
-            </View>
-          </View>
-        </ThemedView>
-      </View>
+     
 
       {/* Top Players Section */}
       <View style={styles.sectionHeader}>
-        <ThemedText style={styles.sectionTitle}>Top Players</ThemedText>
-        <TouchableOpacity style={styles.viewAllButton}>
-          <ThemedText style={[styles.viewAllText, { color: '#226cae' }]}>View All</ThemedText>
-          <FontAwesome name="angle-right" size={16} color="#226cae" />
-        </TouchableOpacity>
+        <ThemedText style={styles.sectionTitle}>Top Players in {regionData.name}</ThemedText>
       </View>
 
       {/* Player Cards */}
@@ -318,15 +263,14 @@ export default function TrophiesScreen() {
                   <View style={[styles.playerAvatar, avatarStyles[index]]}>
                     <FontAwesome name="user" size={20} color="#FFFFFF" />
                   </View>
-                  <View style={styles.playerDetails}>
-                    <ThemedText style={styles.playerName}>{player.name}</ThemedText>
-                    <ThemedText style={styles.playerCode}>{player.level}</ThemedText>
-                  </View>
+                <View style={styles.playerDetails}>
+                  <ThemedText style={styles.playerName}>{player.name}</ThemedText>
+                </View>
                 </View>
                 <View style={styles.playerStats}>
                   <View style={styles.points}>
                     <FontAwesome name="star" size={16} color="#dc2929" />
-                    <ThemedText style={styles.statsText}>{player.points}</ThemedText>
+                    <ThemedText style={styles.statsText}>{player.points} Points</ThemedText>
                   </View>
                   <View style={styles.trophies}>
                     <FontAwesome name="trophy" size={16} color={trophyColors[index]} />
@@ -343,8 +287,38 @@ export default function TrophiesScreen() {
           </ThemedView>
         )}
       </View>
-      
-      
+      {/* Ranking Criteria */}
+      <ThemedView style={styles.criteriaCard}>
+        <View style={styles.criteriaHeader}>
+          <View style={[styles.criteriaBadge, { backgroundColor: '#dc2929' }]}>
+            <FontAwesome name="info" size={12} color="#FFFFFF" />
+          </View>
+          <ThemedText style={styles.criteriaTitle}>Ranking Criteria</ThemedText>
+        </View>
+
+        <View style={styles.criteriaChips}>
+          <View style={[styles.criteriaChip, styles.criteriaChipRed]}>
+            <FontAwesome name="star" size={12} color="#dc2929" />
+            <ThemedText style={styles.criteriaChipText}>Points = total sessions participated</ThemedText>
+          </View>
+          <View style={[styles.criteriaChip, styles.criteriaChipBlue]}>
+            <FontAwesome name="trophy" size={12} color="#226cae" />
+            <ThemedText style={styles.criteriaChipText}>Higher points rank higher in region</ThemedText>
+          </View>
+          <View style={[styles.criteriaChip, styles.criteriaChipMixed]}>
+            <FontAwesome name="clock-o" size={12} color="#8A8A8A" />
+            <ThemedText style={styles.criteriaChipText}>Tie-breaker: earlier registration wins</ThemedText>
+          </View>
+        </View>
+
+        <TouchableOpacity
+          style={styles.criteriaAction}
+          onPress={() => navigation.navigate('SessionsScreen' as never)}
+        >
+          <FontAwesome name="calendar" size={14} color="#FFFFFF" />
+          <ThemedText style={styles.criteriaActionText}>View your sessions</ThemedText>
+        </TouchableOpacity>
+      </ThemedView>
     </ScrollView>
   );
 }
@@ -353,8 +327,20 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+    padding: 0,
+    paddingTop: 0,
+  },
+  scrollContent: {
     padding: 20,
     paddingTop: 0,
+  },
+  gradientBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: -1,
   },
   titleContainer: {
     marginBottom: 24,
@@ -388,7 +374,7 @@ const styles = StyleSheet.create({
   regionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(220, 41, 41, 0.05)',
+    backgroundColor: 'rgba(34, 108, 174, 0.06)',
     padding: 16,
   },
   regionIconContainer: {
@@ -509,6 +495,10 @@ const styles = StyleSheet.create({
   },
   playerCode: {
     fontSize: 14,
+    color: '#666666',
+  },
+  playerScore: {
+    fontSize: 12,
     color: '#666666',
   },
   playerStats: {
@@ -700,5 +690,95 @@ const styles = StyleSheet.create({
     color: '#666666',
     marginTop: 12,
     textAlign: 'center',
+  },
+  criteriaCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 15,
+    padding: 16,
+    marginBottom: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+    borderLeftWidth: 4,
+    borderLeftColor: '#226cae',
+    overflow: 'hidden',
+  },
+  // removed mixed gradient; using solid accents instead
+  criteriaHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  criteriaBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  criteriaBadgeFill: {
+    ...StyleSheet.absoluteFillObject as any,
+  },
+  criteriaTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#333333',
+  },
+  criteriaLine: {
+    fontSize: 13,
+    color: '#666666',
+    marginTop: 4,
+  },
+  criteriaChips: {
+    marginTop: 6,
+    gap: 8,
+  },
+  criteriaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: '#F8F8F8',
+  },
+  criteriaChipRed: {
+    backgroundColor: 'rgba(220, 41, 41, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(220, 41, 41, 0.25)'
+  },
+  criteriaChipBlue: {
+    backgroundColor: 'rgba(34, 108, 174, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(34, 108, 174, 0.25)'
+  },
+  criteriaChipMixed: {
+    backgroundColor: 'rgba(0,0,0,0.03)',
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.08)'
+  },
+  criteriaChipText: {
+    color: '#444444',
+    fontSize: 13,
+  },
+  criteriaAction: {
+    marginTop: 12,
+    alignSelf: 'flex-start',
+    backgroundColor: '#226cae',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  criteriaActionText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
 }); 

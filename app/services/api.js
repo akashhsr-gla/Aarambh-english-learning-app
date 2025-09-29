@@ -601,10 +601,10 @@ export const transactionsAPI = {
 // Referrals API
 export const referralsAPI = {
   // Validate referral code
-  validateReferralCode: async (referralCode) => {
+  validateReferralCode: async (data) => {
     return await apiRequest('/referrals/validate', {
       method: 'POST',
-      body: JSON.stringify({ referralCode }),
+      body: JSON.stringify(data),
     });
   },
 
@@ -628,15 +628,15 @@ export const referralsAPI = {
 export const teacherAPI = {
   // Get teacher dashboard data
   getDashboardData: async () => {
-    const currentUser = await authAPI.getCurrentUser();
-    const teacherId = currentUser.data._id;
+    const me = await authAPI.getCurrentUser();
+    const teacherId = me?.data?.user?._id || me?.data?._id;
     return await apiRequest(`/referrals/teacher/${teacherId}`);
   },
 
   // Get teacher's earnings and claims
   getEarnings: async () => {
-    const currentUser = await authAPI.getCurrentUser();
-    const teacherId = currentUser.data._id;
+    const me = await authAPI.getCurrentUser();
+    const teacherId = me?.data?.user?._id || me?.data?._id;
     const response = await apiRequest(`/referrals/teacher/${teacherId}`);
     return response;
   },
@@ -658,8 +658,8 @@ export const teacherAPI = {
 
   // Get students referred by teacher
   getReferredStudents: async () => {
-    const currentUser = await authAPI.getCurrentUser();
-    const teacherId = currentUser.data._id;
+    const me = await authAPI.getCurrentUser();
+    const teacherId = me?.data?.user?._id || me?.data?._id;
     const response = await apiRequest(`/referrals/teacher/${teacherId}`);
     return response.data?.referrals || [];
   },

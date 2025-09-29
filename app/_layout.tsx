@@ -71,6 +71,7 @@ function RootLayoutNav() {
         <Stack.Screen name="SubscriptionScreen" options={{ headerShown: false }} />
         <Stack.Screen name="SessionsScreen" options={{ headerShown: false }} />
         <Stack.Screen name="TeacherDashboard" options={{ headerShown: false }} />
+        <Stack.Screen name="PrivacyPolicyScreen" options={{ headerShown: false }} />
       </Stack>
     </ThemeProvider>
   );

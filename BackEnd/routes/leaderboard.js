@@ -11,51 +11,26 @@ const validateRegionQuery = [
   body('regionId').optional().isMongoId().withMessage('Invalid region ID')
 ];
 
-// Helper function to calculate leaderboard score
-const calculateLeaderboardScore = (lecturesWatched, gameSessions, communicationSessions) => {
-  // Equal weightage for all three components (33.33% each)
-  const lectureScore = lecturesWatched * 0.3333;
-  const gameScore = gameSessions * 0.3333;
-  const communicationScore = communicationSessions * 0.3334; // Slightly higher to ensure total = 100%
-  
-  return Math.round((lectureScore + gameScore + communicationScore) * 100) / 100; // Round to 2 decimal places
+// Simplified scoring: points = total number of sessions the user participated in (any type, any status)
+const calculatePointsFromSessions = (totalSessions) => {
+  return Number(totalSessions) || 0;
 };
 
-// Helper function to get user statistics
+// Helper function to get user statistics/points (sessions-based)
 const getUserStatistics = async (userId) => {
   try {
-    // Get lectures watched count (from user model)
-    const user = await User.findById(userId).select('studentInfo.totalLecturesWatched');
-    const lecturesWatched = user?.studentInfo?.totalLecturesWatched || 0;
-
-    // Get game sessions count
-    const gameSessions = await Session.countDocuments({
-      'participants.user': userId,
-      sessionType: 'game',
-      'gameSession.status': 'completed'
+    // Count sessions exactly like Sessions API (my-sessions): only those where user is in participants.user
+    const totalSessions = await Session.countDocuments({
+      'participants.user': userId
     });
-
-    // Get communication sessions count (all types of calls and chats)
-    const communicationSessions = await Session.countDocuments({
-      'participants.user': userId,
-      sessionType: { 
-        $in: ['video_call', 'voice_call', 'group_video_call', 'group_voice_call', 'chat'] 
-      },
-      status: 'completed'
-    });
-
     return {
-      lecturesWatched,
-      gameSessions,
-      communicationSessions,
-      totalScore: calculateLeaderboardScore(lecturesWatched, gameSessions, communicationSessions)
+      totalSessions,
+      totalScore: calculatePointsFromSessions(totalSessions)
     };
   } catch (error) {
     console.error('Error getting user statistics:', error);
     return {
-      lecturesWatched: 0,
-      gameSessions: 0,
-      communicationSessions: 0,
+      totalSessions: 0,
       totalScore: 0
     };
   }
@@ -123,8 +98,15 @@ router.get('/region/:regionId/top3', authenticateToken, async (req, res) => {
       })
     );
 
-    // Sort by total score (descending) and assign ranks
-    leaderboardData.sort((a, b) => b.totalScore - a.totalScore);
+    // Sort by total score (desc). For ties on totalScore (e.g., 0 points), earlier registration gets better rank
+    // Requires createdAt on User; we'll map createdAt alongside studentId
+    const createdMap = new Map(students.map(s => [s._id.toString(), s.createdAt || new Date(0)]));
+    leaderboardData.sort((a, b) => {
+      if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+      const aCreated = new Date(createdMap.get(a.student?.id || a.studentId) || 0).getTime();
+      const bCreated = new Date(createdMap.get(b.student?.id || b.studentId) || 0).getTime();
+      return aCreated - bCreated; // earlier date first
+    });
     leaderboardData.forEach((entry, index) => {
       entry.rank = index + 1;
     });
@@ -234,8 +216,13 @@ router.get('/region/:regionId', authenticateToken, async (req, res) => {
       })
     );
 
-    // Sort by total score (descending) and assign ranks
-    leaderboardData.sort((a, b) => b.totalScore - a.totalScore);
+    const createdMap2 = new Map(students.map(s => [s._id.toString(), s.createdAt || new Date(0)]));
+    leaderboardData.sort((a, b) => {
+      if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+      const aCreated = new Date(createdMap2.get(a.student?.id || a.studentId) || 0).getTime();
+      const bCreated = new Date(createdMap2.get(b.student?.id || b.studentId) || 0).getTime();
+      return aCreated - bCreated;
+    });
     leaderboardData.forEach((entry, index) => {
       entry.rank = index + 1;
     });
@@ -442,8 +429,13 @@ router.get('/my-rank', authenticateToken, async (req, res) => {
       })
     );
 
-    // Sort by total score (descending) and assign ranks
-    leaderboardData.sort((a, b) => b.totalScore - a.totalScore);
+    const createdMap3 = new Map(students.map(s => [s._id.toString(), s.createdAt || new Date(0)]));
+    leaderboardData.sort((a, b) => {
+      if (b.totalScore !== a.totalScore) return b.totalScore - a.totalScore;
+      const aCreated = new Date(createdMap3.get(a.student?.id || a.studentId) || 0).getTime();
+      const bCreated = new Date(createdMap3.get(b.student?.id || b.studentId) || 0).getTime();
+      return aCreated - bCreated;
+    });
     leaderboardData.forEach((entry, index) => {
       entry.rank = index + 1;
     });
@@ -473,13 +465,11 @@ router.get('/my-rank', authenticateToken, async (req, res) => {
         },
         totalStudents: students.length,
         scoringMethod: {
-          description: 'Equal weightage scoring',
+          description: 'Points-based scoring',
           components: {
-            lecturesWatched: '33.33%',
-            gameSessions: '33.33%',
-            communicationSessions: '33.34%'
+            totalSessions: '1 point per session of any type'
           },
-          formula: 'Score = (lectures * 0.3333) + (games * 0.3333) + (communication * 0.3334)'
+          formula: 'Points = total number of sessions (hosted or joined)'
         }
       }
     });

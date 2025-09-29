@@ -304,9 +304,10 @@ app.use('*', (req, res) => {
 
 const PORT = process.env.PORT || 5000;
 
-const server = app.listen(PORT, () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 AarambhApp Backend Server running on port ${PORT}`);
   console.log(`📚 Available at: http://localhost:${PORT}`);
+  console.log(`🌐 Network accessible at: http://192.168.1.4:${PORT}`);
   console.log(`🔍 Test endpoint: http://localhost:${PORT}/test`);
   console.log(`💚 Health check: http://localhost:${PORT}/health`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);

@@ -33,8 +33,9 @@ interface UserProfile {
   };
   studentInfo?: {
     languageLevel: 'beginner' | 'intermediate' | 'advanced';
-    subscriptionStatus: string;
+    subscriptionStatus?: string;
     currentPlan?: any;
+    planExpiryDate?: string;
   };
   teacherInfo?: {
     subject: string;
@@ -124,17 +125,16 @@ export default function ProfileScreen() {
 
   const getSubscriptionStatus = () => {
     if (!profile?.studentInfo) return 'Not applicable';
-    
-    switch (profile.studentInfo.subscriptionStatus) {
-      case 'active':
-        return '✅ Active';
-      case 'expired':
-        return '⏰ Expired';
-      case 'cancelled':
-        return '❌ Cancelled';
-      default:
-        return '⭕ Inactive';
-    }
+    const expiry = profile.studentInfo.planExpiryDate
+      ? new Date(profile.studentInfo.planExpiryDate)
+      : null;
+    const isActive = expiry ? expiry.getTime() > Date.now() : false;
+    if (isActive) return '✅ Active';
+    // fallback to server-provided status if present
+    const status = profile.studentInfo.subscriptionStatus;
+    if (status === 'cancelled') return '❌ Cancelled';
+    if (status === 'expired') return '⏰ Expired';
+    return '⭕ Inactive';
   };
 
   if (loading) {
