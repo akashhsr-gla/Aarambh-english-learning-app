@@ -352,6 +352,8 @@ export default function HomeScreen() {
             <FontAwesome name="arrow-right" size={16} color="#FFFFFF" />
           </TouchableOpacity>
       </ThemedView>
+        {/* Bottom spacer (~0.5 cm) */}
+        <View style={styles.bottomSpacer} />
       </ScrollView>
     </View>
   );
@@ -374,6 +376,10 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
     paddingTop: 0,
+  },
+  bottomSpacer: {
+    height: 58, // ~0.5cm visually on most devices
+    backgroundColor: '#FFFFFF',
   },
   playerCard: {
     backgroundColor: '#FFFFFF',

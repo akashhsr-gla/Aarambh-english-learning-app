@@ -371,6 +371,8 @@ export default function HelpScreen() {
             © 2024 Aarambh. All rights reserved.
           </ThemedText>
         </ThemedView>
+        {/* Bottom spacer for lifted tab bar */}
+        <View style={{ height: 58, backgroundColor: '#FFFFFF' }} />
       </ScrollView>
       <ChatButton />
     </View>

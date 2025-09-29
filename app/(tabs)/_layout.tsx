@@ -22,9 +22,13 @@ function TabBarIcon({ name, color }: { name: TabIconName, color: string }) {
 }
 
 export default function TabLayout() {
+  // Use an `any` spread to safely apply scene container padding without TS complaining
+  const scenePadding: any = { sceneContainerStyle: { paddingBottom: 32 } };
   return (
     <Tabs
       screenOptions={{
+        ...scenePadding,
+        safeAreaInsets: { bottom: 32 },
         tabBarActiveTintColor: '#dc2929', // Primary red from web app
         tabBarInactiveTintColor: '#226cae', // Primary blue from web app
         headerShown: false,
@@ -32,7 +36,7 @@ export default function TabLayout() {
         tabBarBackground: TabBarBackground,
         tabBarStyle: {
           position: 'absolute',
-          bottom: 16,
+          bottom: 1,
           left: 16,
           right: 16,
           borderRadius: 16,
@@ -41,7 +45,7 @@ export default function TabLayout() {
           shadowOffset: { width: 0, height: -2 },
           shadowOpacity: 0.05,
           shadowRadius: 10,
-          elevation: 5,
+          elevation: 10,
           height: 60,
           paddingBottom: 10,
         },

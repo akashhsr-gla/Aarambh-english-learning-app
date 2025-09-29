@@ -321,6 +321,8 @@ export default function TrophiesScreen() {
           <ThemedText style={styles.criteriaActionText}>View your sessions</ThemedText>
         </TouchableOpacity>
       </ThemedView>
+      {/* Bottom spacer for lifted tab bar */}
+      <View style={styles.bottomSpacer} />
     </ScrollView>
     <ChatButton />
     </>
@@ -694,6 +696,10 @@ const styles = StyleSheet.create({
     color: '#666666',
     marginTop: 12,
     textAlign: 'center',
+  },
+  bottomSpacer: {
+    height: 38,
+    backgroundColor: '#FFFFFF',
   },
   criteriaCard: {
     backgroundColor: '#FFFFFF',

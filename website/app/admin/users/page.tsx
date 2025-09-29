@@ -598,7 +598,7 @@ export default function UserManagement() {
                   </nav>
                 </div>
               </div>
-            </</div>
+            </div>
           </div>
         )}
       </div>

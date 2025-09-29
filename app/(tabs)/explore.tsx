@@ -209,6 +209,8 @@ export default function GameScreen() {
         </ThemedView>
         
         
+        {/* Bottom spacer for lifted tab bar */}
+        <View style={{ height: 58, backgroundColor: '#FFFFFF' }} />
       </ScrollView>
 
       {/* Chat Button */}
