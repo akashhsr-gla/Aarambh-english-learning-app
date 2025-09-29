@@ -20,7 +20,7 @@
       "edgeToEdgeEnabled": true,
       "package": "com.anonymous.AarambhApp",
       "usesCleartextTraffic": true,
-      "permissions": ["RECORD_AUDIO"]
+      "permissions": ["RECORD_AUDIO", "CAMERA"]
     },
     "web": {
       "bundler": "metro",
