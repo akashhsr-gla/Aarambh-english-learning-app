@@ -74,6 +74,8 @@ router.post('/create-order', authenticateToken, [
   body('planId').isMongoId().withMessage('Valid plan ID is required'),
   body('referralCode').optional().isString().withMessage('Referral code must be a string')
 ], async (req, res) => {
+  // Ensure we can reference orderOptions in catch blocks without ReferenceError
+  let orderOptions;
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -168,7 +170,7 @@ router.post('/create-order', authenticateToken, [
     }
     // Use the shortest safe receipt to eliminate length issues
     const shortReceipt = 'r';
-    let orderOptions = {
+    orderOptions = {
       amount: Math.round(finalAmount * 100), // Razorpay expects amount in paise
       currency: 'INR',
       receipt: shortReceipt,
@@ -217,18 +219,18 @@ router.post('/create-order', authenticateToken, [
     } catch {}
     try {
       console.error('Order options debug:', {
-        amount: orderOptions?.amount,
-        currency: orderOptions?.currency,
-        receipt: orderOptions?.receipt,
-        receiptLen: orderOptions?.receipt ? String(orderOptions.receipt).length : null
+        amount: orderOptions && orderOptions.amount,
+        currency: orderOptions && orderOptions.currency,
+        receipt: orderOptions && orderOptions.receipt,
+        receiptLen: orderOptions && orderOptions.receipt ? String(orderOptions.receipt).length : null
       });
     } catch {}
     res.status(500).json({ 
       success: false, 
       message: 'Internal server error',
       debug: {
-        receipt: orderOptions?.receipt,
-        receiptLen: orderOptions?.receipt ? String(orderOptions.receipt).length : null
+        receipt: orderOptions && orderOptions.receipt,
+        receiptLen: orderOptions && orderOptions.receipt ? String(orderOptions.receipt).length : null
       }
     });
   }

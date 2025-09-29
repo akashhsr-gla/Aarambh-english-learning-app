@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const apiBase = process.env.BACKEND_URL || 'https://aarambh-english-learning-app.onrender.com';
+    const apiBase = process.env.BACKEND_URL || 'https://aarambh-english-learning-app-1.onrender.com';
 
     const resp = await fetch(`${apiBase}/api/auth/admin/login`, {
       method: 'POST',

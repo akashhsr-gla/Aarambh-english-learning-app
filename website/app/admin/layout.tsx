@@ -5,7 +5,6 @@ import {
   Calendar,
   CreditCard,
   Gamepad2,
-  LayoutDashboard,
   LogOut,
   Menu,
   Settings,
@@ -49,8 +48,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     // Validate token with backend; if invalid, force login
     const validate = async () => {
       try {
-        const apiBase = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://aarambh-english-learning-app.onrender.com';
-        const resp = await fetch(`${apiBase}/api/auth/me`, {
+        const apiBase = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://aarambh-english-learning-app-1.onrender.com';
+        const resp = await fetch(`${apiBase}/auth/me`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (!resp.ok) {
@@ -76,28 +75,22 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
   const navigation = [
     {
-      name: 'Dashboard',
-      href: '/admin/dashboard',
-      icon: LayoutDashboard,
-      current: pathname === '/admin/dashboard'
-    },
-    {
-      name: 'Games Management',
-      href: '/admin/games',
-      icon: Gamepad2,
-      current: pathname.startsWith('/admin/games')
-    },
-    {
       name: 'User Management',
       href: '/admin/users',
       icon: Users,
       current: pathname.startsWith('/admin/users')
     },
     {
-      name: 'Payment Management',
-      href: '/admin/payments',
+      name: 'Subscription Management',
+      href: '/admin/subscriptions',
       icon: CreditCard,
-      current: pathname.startsWith('/admin/payments')
+      current: pathname.startsWith('/admin/subscriptions')
+    },
+    {
+      name: 'Game Management',
+      href: '/admin/games',
+      icon: Gamepad2,
+      current: pathname.startsWith('/admin/games')
     },
     {
       name: 'Session Management',
@@ -106,16 +99,22 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       current: pathname.startsWith('/admin/sessions')
     },
     {
-      name: 'Analytics',
-      href: '/admin/analytics',
-      icon: BarChart3,
-      current: pathname.startsWith('/admin/analytics')
+      name: 'Regions Management',
+      href: '/admin/regions',
+      icon: Settings,
+      current: pathname.startsWith('/admin/regions')
     },
     {
-      name: 'Settings',
-      href: '/admin/settings',
-      icon: Settings,
-      current: pathname.startsWith('/admin/settings')
+      name: 'Leaderboard Management',
+      href: '/admin/leaderboard',
+      icon: BarChart3,
+      current: pathname.startsWith('/admin/leaderboard')
+    },
+    {
+      name: 'Teacher Management',
+      href: '/admin/teachers',
+      icon: Shield,
+      current: pathname.startsWith('/admin/teachers')
     }
   ];
 

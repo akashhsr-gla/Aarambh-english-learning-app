@@ -417,7 +417,11 @@ export default function ChatScreen() {
     if (cancelingRef.current) return;
     cancelingRef.current = true;
     try {
-      // Always ask server to cancel everything for this user to be strict
+      // If chat session exists, attempt to leave first
+      if (session?.id) {
+        try { await communicationAPI.leaveSession(session.id); } catch {}
+      }
+      // Strict cancel: ensure any waiting/active sessions are cancelled and marked incomplete
       try { await communicationAPI.cancelAllSessions(); } catch {}
       try { await communicationAPI.purgeAllSessionsHard(); } catch {}
     } finally {

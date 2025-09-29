@@ -875,6 +875,11 @@ export default function CallScreen() {
     cancelingRef.current = true;
     
     try {
+      // If we already have a server session, explicitly leave it
+      if (session?.sessionId) {
+        try { await communicationAPI.leaveSession(session.sessionId); } catch {}
+      }
+      // Strict cancel flows for any waiting/active sessions associated with user
       await communicationAPI.cancelAllSessions();
       await communicationAPI.purgeAllSessionsHard();
     } catch (error) {

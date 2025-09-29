@@ -20,7 +20,10 @@
       "edgeToEdgeEnabled": true,
       "package": "com.anonymous.AarambhApp",
       "usesCleartextTraffic": true,
-      "permissions": ["RECORD_AUDIO", "CAMERA"]
+      "permissions": [
+        "RECORD_AUDIO",
+        "CAMERA"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -46,10 +49,11 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "aarambhapp"
+        "projectId": "f1b9deec-713a-49df-8eb4-ab35b844d7b4"
       },
       "razorpayKeyId": "rzp_test_R5asFuaFqiFCMM",
       "apiBaseUrl": "https://aarambh-english-learning-app-1.onrender.com/api"
-    }
+    },
+    "owner": "akashhsr"
   }
 }
