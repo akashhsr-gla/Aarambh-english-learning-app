@@ -1,4 +1,32 @@
 // Configure API base URL based on platform
+// ============================================================================
+// HOW THE API BASE URL IS RESOLVED (READ CAREFULLY BEFORE CHANGING):
+//
+// 1) Highest priority: EXPO_PUBLIC_API_BASE_URL (environment variable)
+//    - This is the recommended way for production builds (APK/IPA) and EAS.
+//    - Example for your Render deployment:
+//      EXPO_PUBLIC_API_BASE_URL = "https://aarambh-english-learning-app-1.onrender.com/api"
+//    - Set in EAS build environment or your CI/CD secrets.
+//
+// 2) Fallback: app.json -> expo.extra.apiBaseUrl
+//    - We updated this to the Render URL so the app works out-of-the-box:
+//      "apiBaseUrl": "https://aarambh-english-learning-app-1.onrender.com/api"
+//    - Good for local runs and if you don’t want to manage env vars.
+//
+// 3) Last resort (local dev):
+//    - Android emulator: http://10.0.2.2:5000/api
+//    - iOS simulator/Web: http://localhost:5000/api
+//
+// RECOMMENDED WORKFLOWS:
+// - Local dev against local backend:
+//   Set EXPO_PUBLIC_API_BASE_URL="http://localhost:5000/api" before starting Expo.
+// - Local dev against Render backend:
+//   Set EXPO_PUBLIC_API_BASE_URL="https://aarambh-english-learning-app-1.onrender.com/api"
+// - Production build (APK):
+//   Configure EAS secret EXPO_PUBLIC_API_BASE_URL with your Render URL.
+//
+// Note: This file logs the resolved URL in __DEV__ to help debugging.
+// ============================================================================
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 // Lazy load AsyncStorage to avoid NativeModule null in web or if not linked yet

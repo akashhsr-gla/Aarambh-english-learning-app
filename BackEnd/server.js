@@ -10,6 +10,11 @@ const connectDB = require('./config/database');
 
 const app = express();
 
+// Trust the first proxy (Render/other PaaS run behind a proxy)
+// This is required so middleware like express-rate-limit can reliably read client IPs
+// from X-Forwarded-For without throwing validation errors in managed environments.
+app.set('trust proxy', 1);
+
 // Connect to MongoDB
 connectDB();
 
