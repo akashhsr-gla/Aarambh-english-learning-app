@@ -135,7 +135,7 @@ router.post('/pronunciation', authenticateToken, pronunciationValidation, async 
   }
 });
 
-// 2. EVALUATE PRONUNCIATION WITH AUDIO FILE
+// 2. EVALUATE PRONUNCIATION WITH AUDIO FILE (Using OpenAI Whisper)
 router.post('/pronunciation/audio', authenticateToken, upload.single('audio'), async (req, res) => {
   try {
     if (!req.file) {
@@ -155,29 +155,23 @@ router.post('/pronunciation/audio', authenticateToken, upload.single('audio'), a
     }
 
     console.log('🎤 Processing audio file for pronunciation evaluation:', req.file.filename);
+    console.log('📍 Audio file path:', req.file.path);
+    console.log('🎯 Target word:', targetWord);
 
-    // For now, we'll use a placeholder transcription
-    // In a real implementation, you would use speech-to-text service like:
-    // - OpenAI Whisper API
-    // - Google Speech-to-Text
-    // - Azure Speech Services
-    const placeholderTranscription = targetWord; // This is a placeholder
-
-    // TODO: Implement actual speech-to-text conversion
-    // const transcription = await speechToTextService.transcribe(req.file.path);
-
-    const evaluation = await aiEvaluationService.evaluatePronunciation({
-      transcription: placeholderTranscription,
+    // Use OpenAI Whisper API for real speech-to-text transcription
+    const evaluation = await aiEvaluationService.evaluatePronunciationFromAudio({
+      audioFilePath: req.file.path,
       targetWord,
       difficulty
     });
 
-    // Clean up uploaded file after processing
+    // Clean up uploaded file after processing (give more time for Whisper processing)
     setTimeout(() => {
       fs.unlink(req.file.path, (err) => {
         if (err) console.error('Error deleting audio file:', err);
+        else console.log('✅ Audio file cleaned up:', req.file.filename);
       });
-    }, 60000); // Delete after 1 minute
+    }, 120000); // Delete after 2 minutes
 
     res.json({
       success: true,
@@ -185,13 +179,14 @@ router.post('/pronunciation/audio', authenticateToken, upload.single('audio'), a
       data: {
         evaluation,
         target_word: targetWord,
+        transcription: evaluation.transcription,
         audio_processed: true,
         timestamp: new Date().toISOString()
       }
     });
 
   } catch (error) {
-    console.error('Audio pronunciation evaluation error:', error);
+    console.error('❌ Audio pronunciation evaluation error:', error);
     
     // Clean up file on error
     if (req.file) {

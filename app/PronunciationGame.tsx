@@ -316,90 +316,59 @@ export default function PronunciationGame() {
 
   const processRecording = async (uri: string) => {
     try {
-      // Simulate realistic speech-to-text transcription
-      let transcription = '';
-      try {
-        // Generate realistic transcription variations for any word
-        const targetWord = currentWord.word.toLowerCase();
-        
-        // Create realistic mispronunciations based on common speech patterns
-        const generateTranscription = (word: string) => {
-          const variations = [word]; // Start with correct word
-          
-          // Add common mispronunciations
-          if (word.length > 2) {
-            // Vowel substitutions (most common)
-            const vowels = ['a', 'e', 'i', 'o', 'u'];
-            vowels.forEach(vowel => {
-              if (word.includes(vowel)) {
-                const variation = word.replace(vowel, vowels[Math.floor(Math.random() * vowels.length)]);
-                if (variation !== word) variations.push(variation);
-              }
-            });
-            
-            // Consonant substitutions for common sounds
-            const consonantMap: { [key: string]: string[] } = {
-              'th': ['f', 's', 't'],
-              'sh': ['s', 'ch'],
-              'ch': ['sh', 'k'],
-              'ph': ['f', 'p'],
-              'gh': ['f', 'g', ''],
-              'ck': ['k', 'c'],
-              'qu': ['k', 'kw']
-            };
-            
-            Object.entries(consonantMap).forEach(([sound, replacements]) => {
-              if (word.includes(sound)) {
-                replacements.forEach(replacement => {
-                  const variation = word.replace(sound, replacement);
-                  if (variation !== word && variation.length > 0) variations.push(variation);
-                });
-              }
-            });
-            
-            // Add/remove common endings
-            if (word.endsWith('ing')) {
-              variations.push(word.replace('ing', 'in'));
-              variations.push(word.replace('ing', 'en'));
-            }
-            if (word.endsWith('ed')) {
-              variations.push(word.replace('ed', 't'));
-              variations.push(word.replace('ed', 'd'));
-            }
-            if (word.endsWith('s')) {
-              variations.push(word.slice(0, -1));
-            }
-          }
-          
-          // Remove duplicates and return random selection
-          const uniqueVariations = [...new Set(variations)];
-          return uniqueVariations[Math.floor(Math.random() * uniqueVariations.length)];
-        };
-        
-        transcription = generateTranscription(targetWord);
-        
-      } catch (speechError) {
-        console.error('Speech-to-text failed:', speechError);
-        // Simple fallback - add some random variation
-        const targetWord = currentWord.word.toLowerCase();
-        const randomChar = targetWord[Math.floor(Math.random() * targetWord.length)];
-        transcription = targetWord.replace(randomChar, String.fromCharCode(97 + Math.floor(Math.random() * 26)));
-      }
+      console.log('🎤 Processing audio recording:', uri);
       
-      const evaluationData = {
-        targetWord: currentWord.word,
-        transcription: transcription,
-        difficulty: currentWord.difficulty.toLowerCase()
+      // Create FormData to send audio file
+      const formData = new FormData();
+      
+      // Determine file type from URI
+      const uriParts = uri.split('.');
+      const fileType = uriParts[uriParts.length - 1];
+      const mimeType = fileType === 'wav' ? 'audio/wav' : 
+                      fileType === 'm4a' ? 'audio/m4a' : 
+                      fileType === 'mp3' ? 'audio/mp3' : 
+                      'audio/wav';
+      
+      // Create file object for the audio
+      const audioFile = {
+        uri,
+        type: mimeType,
+        name: `pronunciation-${Date.now()}.${fileType}`
       };
       
-      const response = await evaluation.evaluatePronunciation(evaluationData);
+      // @ts-ignore - FormData types in React Native
+      formData.append('audio', audioFile);
+      formData.append('targetWord', currentWord.word);
+      formData.append('difficulty', currentWord.difficulty.toLowerCase());
+      
+      if (gameId) {
+        formData.append('gameId', gameId);
+      }
+      
+      console.log('📤 Sending audio to backend for evaluation...');
+      console.log('🎯 Target word:', currentWord.word);
+      
+      // Send audio file to backend for Whisper transcription + AI evaluation
+      const response = await evaluation.evaluatePronunciationAudio(
+        audioFile,
+        currentWord.word,
+        currentWord.difficulty.toLowerCase(),
+        gameId,
+        undefined
+      );
+      
+      console.log('📥 Received evaluation response:', response);
       
       if (response.success) {
         const aiEvaluation = response.data.evaluation;
+        const transcription = response.data.transcription || aiEvaluation.transcription || '';
+        
+        console.log('✅ Transcription:', transcription);
+        console.log('✅ Final score:', aiEvaluation.final_score);
         
         setFeedback({
           message: aiEvaluation.feedback.substring(0, 100) + '...',
-          details: aiEvaluation.feedback,
+          details: `You said: "${transcription}"\n\n${aiEvaluation.feedback}`,
           color: aiEvaluation.final_score >= 80 ? "#4CAF50" : 
                  aiEvaluation.final_score >= 60 ? "#8BC34A" : 
                  aiEvaluation.final_score >= 40 ? "#FFC107" : "#FF5722",
@@ -415,7 +384,7 @@ export default function PronunciationGame() {
         throw new Error('AI evaluation failed');
       }
     } catch (error) {
-      console.error('AI evaluation error:', error);
+      console.error('❌ AI evaluation error:', error);
       
       // Show error to user and ask them to try again
       Alert.alert(

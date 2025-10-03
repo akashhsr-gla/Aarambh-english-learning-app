@@ -97,8 +97,8 @@ export default function SessionManagement() {
     return localStorage.getItem('adminToken');
   };
 
-  const fetchSessions = async () => {
-    try {
+    const fetchSessions = async () => {
+      try {
       setLoading(true);
       const params = new URLSearchParams({
         page: currentPage.toString(),
@@ -126,10 +126,10 @@ export default function SessionManagement() {
       setStatistics(data.data.statistics || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch sessions');
-    } finally {
-      setLoading(false);
-    }
-  };
+      } finally {
+        setLoading(false);
+      }
+    };
 
   const deleteSession = async (sessionId: string) => {
     if (!confirm('Are you sure you want to delete this session?')) {
@@ -268,20 +268,20 @@ export default function SessionManagement() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
           {statistics.map((stat, index) => (
             <div key={index} className="bg-white rounded-lg shadow-sm border p-6">
-              <div className="flex items-center">
+          <div className="flex items-center">
                 <div className="flex-shrink-0">
                   {getSessionTypeIcon(stat._id)}
                 </div>
                 <div className="ml-3">
                   <div className="text-sm font-medium text-gray-500">
                     {getSessionTypeLabel(stat._id)}
-                  </div>
+            </div>
                   <div className="text-2xl font-bold text-gray-900">{stat.count}</div>
                   <div className="text-xs text-gray-500">
                     Avg: {formatDuration(stat.avgDuration)}
-                  </div>
-                </div>
-              </div>
+            </div>
+          </div>
+        </div>
             </div>
           ))}
         </div>
@@ -510,8 +510,8 @@ export default function SessionManagement() {
                   <div>
                     <label className="block text-sm font-medium text-gray-700">Session ID</label>
                     <p className="text-sm text-gray-900 font-mono">{selectedSession.sessionId}</p>
-                  </div>
-                  <div>
+                </div>
+                <div>
                     <label className="block text-sm font-medium text-gray-700">Type</label>
                     <div className="flex items-center">
                       {getSessionTypeIcon(selectedSession.sessionType)}
@@ -586,7 +586,7 @@ export default function SessionManagement() {
                         </div>
                       </div>
                     ))}
-                  </div>
+              </div>
                 </div>
 
                 {/* Game Session Info */}
@@ -623,8 +623,8 @@ export default function SessionManagement() {
                       </div>
                     </div>
                   </div>
-                )}
-              </div>
+                  )}
+                </div>
 
               <div className="flex justify-end pt-4">
                 <button

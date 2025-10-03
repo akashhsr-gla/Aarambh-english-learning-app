@@ -898,7 +898,7 @@ const evaluationAPI = {
   },
 
   // Evaluate pronunciation with audio file
-  evaluatePronunciationAudio: async (audioFile, targetWord, difficulty = 'medium', gameId = null, sessionId = null) => {
+  evaluatePronunciationAudio: async (audioFile, targetWord, difficulty = 'medium', gameId, sessionId) => {
     const formData = new FormData();
     formData.append('audio', audioFile);
     formData.append('targetWord', targetWord);

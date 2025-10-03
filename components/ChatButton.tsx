@@ -48,29 +48,52 @@ export default function ChatButton({ expandable = true, navigateOnClick = false 
   const [keyboardVisible, setKeyboardVisible] = useState(false);
 
   // Pan responder for draggable chat button
+  const isDraggingRef = useRef(false);
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponderCapture: () => false,
+      onMoveShouldSetPanResponder: (_, gesture) => {
+        // Only start dragging if user moves more than 5px
+        return Math.abs(gesture.dx) > 5 || Math.abs(gesture.dy) > 5;
+      },
       onPanResponderGrant: () => {
         // Capture starting position for this drag
+        isDraggingRef.current = false;
         dragStartRef.current = { right: buttonPosition.right, bottom: buttonPosition.bottom };
       },
       onPanResponderMove: (_, gesture) => {
-        const screenW = Dimensions.get('window').width;
-        const screenH = Dimensions.get('window').height;
-        const newRightRaw = dragStartRef.current.right - gesture.dx;
-        const newBottomRaw = dragStartRef.current.bottom - gesture.dy;
-        const newRight = Math.max(0, Math.min(screenW - 60, newRightRaw));
-        const newBottom = Math.max(0 + keyboardOffsetRef.current, Math.min(screenH - 60, newBottomRaw));
-        setButtonPosition({ right: newRight, bottom: newBottom });
+        // Mark as dragging if user has moved significantly
+        if (!isDraggingRef.current && (Math.abs(gesture.dx) > 5 || Math.abs(gesture.dy) > 5)) {
+          isDraggingRef.current = true;
+        }
+        
+        if (isDraggingRef.current) {
+          const screenW = Dimensions.get('window').width;
+          const screenH = Dimensions.get('window').height;
+          const newRightRaw = dragStartRef.current.right - gesture.dx;
+          const newBottomRaw = dragStartRef.current.bottom - gesture.dy;
+          const newRight = Math.max(0, Math.min(screenW - 60, newRightRaw));
+          const newBottom = Math.max(0 + keyboardOffsetRef.current, Math.min(screenH - 60, newBottomRaw));
+          setButtonPosition({ right: newRight, bottom: newBottom });
+        }
       },
-      onPanResponderRelease: () => {
-        const screenW = Dimensions.get('window').width;
-        const screenH = Dimensions.get('window').height;
-        setButtonPosition(prev => ({ 
-          right: Math.max(0, Math.min(prev.right, screenW - 60)), 
-          bottom: Math.max(0 + keyboardOffsetRef.current, Math.min(prev.bottom, screenH - 60))
-        }));
+      onPanResponderRelease: (_, gesture) => {
+        const wasDragging = isDraggingRef.current;
+        isDraggingRef.current = false;
+        
+        if (wasDragging) {
+          // Snap to screen edges after dragging
+          const screenW = Dimensions.get('window').width;
+          const screenH = Dimensions.get('window').height;
+          setButtonPosition(prev => ({ 
+            right: Math.max(0, Math.min(prev.right, screenW - 60)), 
+            bottom: Math.max(0 + keyboardOffsetRef.current, Math.min(prev.bottom, screenH - 60))
+          }));
+        } else {
+          // If not dragging, treat as a tap
+          toggleChat();
+        }
       },
     })
   ).current;
@@ -376,11 +399,9 @@ export default function ChatButton({ expandable = true, navigateOnClick = false 
           ]}
           {...(expandable ? panResponder.panHandlers : {})}
         >
-          <TouchableOpacity onPress={toggleChat} activeOpacity={0.85}>
-            <View style={styles.botIconBubble}>
-              <FontAwesome5 name="robot" size={26} color="#FFFFFF" />
-            </View>
-          </TouchableOpacity>
+          <View style={styles.botIconBubble}>
+            <FontAwesome5 name="robot" size={26} color="#FFFFFF" />
+          </View>
         </View>
       )}
     </>

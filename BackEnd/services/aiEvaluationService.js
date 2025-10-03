@@ -1,4 +1,5 @@
 const { OpenAI } = require('openai');
+const fs = require('fs');
 
 class AIEvaluationService {
   constructor() {
@@ -14,39 +15,145 @@ class AIEvaluationService {
     console.log('✅ AI Evaluation Service initialized with OpenAI API key');
   }
 
+  // Transcribe audio using OpenAI Whisper API
+  async transcribeAudio(audioFilePath) {
+    try {
+      console.log(`🎤 Transcribing audio file: ${audioFilePath}`);
+      
+      // Check if file exists
+      if (!fs.existsSync(audioFilePath)) {
+        throw new Error('Audio file not found');
+      }
+
+      // Create a read stream for the audio file
+      const audioStream = fs.createReadStream(audioFilePath);
+
+      // Call Whisper API for transcription
+      const transcription = await this.openai.audio.transcriptions.create({
+        file: audioStream,
+        model: "whisper-1",
+        language: "en", // English language
+        response_format: "json"
+      });
+
+      console.log(`✅ Transcription successful: "${transcription.text}"`);
+      return transcription.text;
+      
+    } catch (error) {
+      console.error('❌ Whisper transcription error:', error);
+      throw new Error(`Audio transcription failed: ${error.message}`);
+    }
+  }
+
+  // Evaluate pronunciation from audio file directly
+  async evaluatePronunciationFromAudio({ audioFilePath, targetWord, difficulty = 'medium' }) {
+    try {
+      console.log(`🎯 Evaluating pronunciation from audio file for word: "${targetWord}"`);
+      
+      // Step 1: Transcribe audio using Whisper
+      const transcription = await this.transcribeAudio(audioFilePath);
+      
+      // Step 2: Evaluate pronunciation using the transcription
+      const evaluation = await this.evaluatePronunciation({
+        transcription,
+        targetWord,
+        difficulty
+      });
+      
+      // Add transcription to the result
+      evaluation.transcription = transcription;
+      
+      console.log(`✅ Audio-based pronunciation evaluation completed`);
+      return evaluation;
+      
+    } catch (error) {
+      console.error('❌ Audio-based pronunciation evaluation error:', error);
+      throw error;
+    }
+  }
+
   // Evaluate pronunciation based on audio transcription
   async evaluatePronunciation({ transcription, targetWord, difficulty = 'medium' }) {
     try {
       console.log(`🎯 Evaluating pronunciation: "${targetWord}" vs "${transcription}"`);
       
       const prompt = `
-You are an expert English pronunciation evaluator. Analyze the pronunciation accuracy based on:
+You are an expert English pronunciation evaluator with deep knowledge of phonetics, phonology, and language acquisition. Analyze the pronunciation accuracy meticulously:
 
 Target Word: "${targetWord}"
 User's Pronunciation (transcribed): "${transcription}"
 Difficulty Level: ${difficulty}
 
-Evaluate based on:
-1. Phonetic accuracy (vowel and consonant sounds)
-2. Stress patterns and syllable emphasis
-3. Overall clarity and intelligibility
-4. Common pronunciation patterns for this word type
+EVALUATION CRITERIA (be strict but fair):
+
+1. PHONETIC ACCURACY (40 points total):
+   - Consonants (0-20): Evaluate individual consonant sounds. Check for:
+     * Voicing (voiced vs voiceless: /p/ vs /b/, /t/ vs /d/)
+     * Place of articulation (where sound is made: lips, teeth, tongue position)
+     * Manner of articulation (stops, fricatives, nasals)
+   - Vowels (0-20): Evaluate vowel quality and length. Check for:
+     * Vowel height (high, mid, low)
+     * Vowel backness (front, central, back)
+     * Diphthongs vs monophthongs
+     * Vowel length and tension
+
+2. PROSODY & STRESS (30 points total):
+   - Word Stress (0-15): Is the stressed syllable correct?
+     * Primary stress placement
+     * Secondary stress if applicable
+   - Intonation (0-15): Natural speech melody
+     * Rising vs falling intonation
+     * Sentence-level prosody patterns
+
+3. CLARITY & INTELLIGIBILITY (20 points total):
+   - Overall clarity (0-10): Would a native speaker understand this?
+   - Articulation precision (0-10): How clearly are sounds produced?
+
+4. FLUENCY & NATURALNESS (10 points total):
+   - Speech rate (0-5): Too fast, too slow, or natural?
+   - Hesitations (0-5): Smooth production or choppy?
+
+SCORING GUIDELINES:
+- 95-100: Native-like pronunciation, no detectable errors
+- 90-94: Excellent, only very minor deviations
+- 85-89: Very good, slight accent but highly intelligible
+- 80-84: Good, some pronunciation errors but clear
+- 70-79: Acceptable, noticeable errors but understandable
+- 60-69: Fair, significant errors affecting clarity
+- 50-59: Poor, many errors, difficult to understand
+- 40-49: Very poor, major errors throughout
+- 0-39: Extremely poor, nearly unintelligible
+
+IMPORTANT: Compare the ACTUAL sounds made (from transcription) with the TARGET sounds. Consider:
+- Is the transcription phonetically similar or completely different?
+- Are there systematic errors (e.g., /th/ → /t/, /r/ → /w/)?
+- Are errors typical for learners at this level?
 
 Provide evaluation in this exact JSON format (no other text):
 {
-  "accuracy": (0-100),
-  "feedback": "specific, constructive feedback about pronunciation accuracy and areas for improvement",
-  "improvements": ["specific pronunciation tips", "areas to focus on"],
+  "accuracy": (0-100, be precise and realistic),
+  "feedback": "Detailed, specific, constructive feedback explaining EXACTLY which sounds were correct/incorrect and WHY. Reference specific phonemes and articulation. Be encouraging but honest.",
+  "improvements": ["Specific actionable tip with phonetic guidance", "Another specific tip", "Focus on systematic errors first"],
   "score_breakdown": {
-    "consonants": (0-30),
-    "vowels": (0-30),
-    "stress": (0-20),
-    "fluency": (0-20)
+    "consonants": (0-20, evaluate each consonant sound),
+    "vowels": (0-20, evaluate each vowel sound),
+    "stress": (0-15, evaluate stress placement accuracy),
+    "intonation": (0-15, evaluate prosody and melody),
+    "clarity": (0-10, overall intelligibility),
+    "articulation": (0-10, precision of sound production),
+    "fluency": (0-10, smoothness and naturalness)
   },
-  "grade": "A/B/C/D/F"
+  "phonetic_analysis": {
+    "correct_sounds": ["list of sounds produced correctly"],
+    "incorrect_sounds": ["list of sounds with errors and what was said instead"],
+    "stress_pattern": "description of stress pattern (correct/incorrect)",
+    "common_errors": ["typical learner errors detected"]
+  },
+  "grade": "A+/A/A-/B+/B/B-/C+/C/C-/D/F",
+  "difficulty_appropriate": "Is performance good for this difficulty level? (yes/no with explanation)"
 }
 
-Be realistic in scoring - perfect matches get 90-100, close matches get 70-89, partial matches get 50-69, poor matches get 30-49, very poor get 0-29.
+BE THOROUGH: This is language learning evaluation. Your feedback impacts learner progress. Be specific about WHAT was wrong and HOW to fix it.
 `;
 
       const response = await this.openai.chat.completions.create({
@@ -54,15 +161,15 @@ Be realistic in scoring - perfect matches get 90-100, close matches get 70-89, p
         messages: [
           {
             role: "system",
-            content: "You are an expert English pronunciation evaluator. Respond ONLY with valid JSON. No additional text or explanations."
+            content: "You are an expert English pronunciation evaluator with professional training in phonetics and language assessment. Respond ONLY with valid JSON. No additional text or explanations. Be thorough and precise in your evaluation."
           },
           {
             role: "user",
             content: prompt
           }
         ],
-        temperature: 0.2,
-        max_tokens: 600
+        temperature: 0.3,
+        max_tokens: 1000
       });
 
       let evaluation;
@@ -150,49 +257,94 @@ Be realistic in scoring - perfect matches get 90-100, close matches get 70-89, p
       );
 
       const promptText = `
-You are an English language and creative writing evaluation expert. Evaluate this story based on the given criteria:
+You are an expert creative writing instructor and English language evaluator with years of experience assessing student work. Provide a comprehensive, rigorous evaluation of this story.
 
-Story Prompt: "${prompt}"
-User's Story: "${story}"
+STORY DETAILS:
+Story Text: "${story}"
+Writing Prompt/Theme: "${prompt}"
 Required Keywords: [${keywords.join(', ')}]
-Keywords Used: [${keywordsUsed.join(', ')}]
-Minimum Words Required: ${minWords}
-Actual Word Count: ${wordCount}
+Keywords Successfully Used: [${keywordsUsed.join(', ')}] (${keywordsUsed.length}/${keywords.length})
+Word Count: ${wordCount} words (required minimum: ${minWords})
+Time Taken: ${timeSpent} seconds (time limit: ${maxTime} seconds)
 Difficulty Level: ${difficulty}
-Time Spent: ${timeSpent} seconds (max: ${maxTime} seconds)
 
-Please provide evaluation in the following JSON format:
+EVALUATION FRAMEWORK (Total: 100 points):
+
+1. CREATIVITY & ORIGINALITY (25 points):
+   - Unique ideas and fresh perspectives (0-10)
+   - Imaginative plot elements and settings (0-8)
+   - Character originality and depth (0-7)
+   Scoring: 23-25=Exceptional, 20-22=Excellent, 17-19=Good, 14-16=Fair, <14=Needs improvement
+
+2. GRAMMAR & MECHANICS (25 points):
+   - Sentence structure variety and correctness (0-10)
+   - Punctuation and capitalization (0-5)
+   - Verb tense consistency (0-5)
+   - Spelling accuracy (0-5)
+   Scoring: Be strict. Each error reduces score. 23-25=Nearly perfect, 18-22=Few errors, 12-17=Several errors, <12=Many errors
+
+3. VOCABULARY & LANGUAGE (20 points):
+   - Word choice sophistication (0-8)
+   - Descriptive language and imagery (0-7)
+   - Avoiding repetition (0-5)
+   Scoring: Evaluate vocabulary level appropriateness for difficulty: ${difficulty}
+
+4. COHERENCE & STRUCTURE (15 points):
+   - Logical story flow and progression (0-8)
+   - Clear beginning, middle, and end (0-7)
+   Scoring: Can reader follow the story easily? Is there a clear narrative arc?
+
+5. KEYWORD INTEGRATION (15 points):
+   - Natural integration of required keywords (0-10)
+   - Relevance of keyword use to story (0-5)
+   Scoring: ${keywordsUsed.length}/${keywords.length} keywords used. Deduct 3-5 points per missed keyword. Natural use scores higher than forced inclusion.
+
+SCORING RUBRIC:
+95-100: Publication-quality writing, exceptional in all areas
+90-94: Excellent work, minor improvements needed
+85-89: Very good, shows strong skills
+80-84: Good, solid competent writing
+70-79: Acceptable, noticeable room for improvement
+60-69: Fair, significant issues but shows effort
+50-59: Poor, major problems in multiple areas
+40-49: Very poor, lacks basic competency
+0-39: Extremely poor or minimal effort
+
+Provide evaluation in this EXACT JSON format (no other text, must be valid JSON):
 {
-  "overall_score": (0-100),
-  "feedback": "comprehensive feedback about the story",
-  "strengths": ["list of story strengths"],
-  "improvements": ["specific areas to improve"],
+  "overall_score": (0-100, be precise and realistic based on actual story quality),
+  "feedback": "Comprehensive, specific feedback covering all evaluation areas. Be detailed about what worked and what didn't. Reference specific parts of the story. Be encouraging but honest and instructive.",
+  "strengths": ["Specific strength with example from story", "Another specific strength", "Third strength if applicable"],
+  "improvements": ["Specific, actionable improvement with clear guidance", "Another area to work on", "Third area if needed"],
   "score_breakdown": {
-    "creativity": (0-25),
-    "grammar": (0-25),
-    "vocabulary": (0-20),
-    "coherence": (0-15),
-    "keyword_usage": (0-15)
+    "creativity": (0-25, how original and imaginative?),
+    "grammar": (0-25, be strict on errors),
+    "vocabulary": (0-20, sophistication and variety),
+    "coherence": (0-15, does it flow logically?),
+    "keyword_usage": (0-15, natural integration of ${keywords.length} keywords)
   },
   "detailed_analysis": {
-    "plot_development": "analysis of story progression",
-    "character_development": "analysis of characters if any",
-    "language_use": "analysis of language complexity and correctness",
-    "engagement": "how engaging and interesting the story is"
+    "plot_development": "Detailed analysis of story progression, pacing, and narrative arc. Cite specific examples.",
+    "character_development": "Analysis of character depth, believability, and growth. Mention if characters feel real or flat.",
+    "language_use": "Evaluation of sentence variety, vocabulary sophistication, and grammar accuracy. Note specific errors.",
+    "engagement": "How interesting and engaging is the story? Would you want to keep reading? Why or why not?"
   },
-  "grade": "A/B/C/D/F",
-  "word_count_bonus": (0-10),
-  "time_management_bonus": (0-5)
+  "grammar_errors": ["List specific grammar errors found", "Another error if found", "Etc."],
+  "vocabulary_highlights": ["Notable vocabulary used well", "Impressive word choices if any"],
+  "missed_keywords": ["list keywords not used from: ${keywords.join(', ')}"],
+  "grade": "A+/A/A-/B+/B/B-/C+/C/C-/D+/D/D-/F",
+  "difficulty_assessment": "Is this story appropriate for ${difficulty} level? Explain why.",
+  "word_count_bonus": (0-10, based on exceeding minimum thoughtfully),
+  "time_management_bonus": (0-5, for efficient time use)
 }
 
-Consider:
-- Creativity and originality
-- Grammar and language correctness
-- Vocabulary richness and appropriateness
-- Story coherence and flow
-- Effective use of required keywords
-- Appropriate length and completion
-- Time management efficiency
+IMPORTANT:
+- Be thorough and specific, reference actual story content
+- Balance encouragement with honest critique
+- Provide actionable improvement suggestions
+- Consider the difficulty level (${difficulty}) in your assessment
+- This evaluation impacts learning, so be educational not just judgmental
+- Cite specific examples from the story in your feedback
 `;
 
       const response = await this.openai.chat.completions.create({
@@ -200,7 +352,7 @@ Consider:
         messages: [
           {
             role: "system",
-            content: "You are an expert English language and creative writing evaluator. Always respond with valid JSON only."
+            content: "You are an expert English language and creative writing evaluator with professional training in literary analysis and language assessment. Always respond with valid JSON only. Be thorough, specific, and educational in your feedback."
           },
           {
             role: "user",
@@ -208,7 +360,7 @@ Consider:
           }
         ],
         temperature: 0.4,
-        max_tokens: 1200
+        max_tokens: 1500
       });
 
       const evaluation = JSON.parse(response.choices[0].message.content);

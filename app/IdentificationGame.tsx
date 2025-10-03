@@ -470,9 +470,12 @@ export default function IdentificationGame() {
               source={{ uri: currentItem.imageUrl }}
               style={{ width: 180, height: 180, borderRadius: 12 }}
               resizeMode="cover"
+              onError={() => {
+                console.log('Image failed to load, showing fallback');
+              }}
             />
           ) : (
-            <FontAwesome name={currentItem.icon} size={120} color="#dc2929" />
+            <FontAwesome name="question-circle" size={120} color="#dc2929" />
           )}
           </View>
           
