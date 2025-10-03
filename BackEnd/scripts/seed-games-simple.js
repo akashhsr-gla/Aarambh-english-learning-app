@@ -98,76 +98,75 @@ const gamesData = [
     ]
   },
   {
-    title: "Pronunciation Practice - Basic Sounds",
+    title: "Pronunciation Practice - Essential Words",
     createdBy: "68a49c8ef8f87b569c22404e", // Admin user ID
-    description: "Learn to pronounce basic English sounds correctly. Practice with common words and improve your accent.",
+    description: "Practice pronouncing essential English words correctly. Record yourself saying each word and get instant feedback on your pronunciation.",
     gameType: "pronunciation",
     difficulty: "beginner",
     level: 1,
-    timeLimit: 240, // 4 minutes
+    timeLimit: 300, // 5 minutes
     maxScore: 100,
-    passingScore: 75,
-    totalQuestions: 4,
+    passingScore: 70,
+    totalQuestions: 5,
     isPremium: false,
     requiresSubscription: false,
-    categories: ["pronunciation", "beginner", "sounds"],
-    tags: ["basic sounds", "accent", "speech"],
+    categories: ["pronunciation", "beginner", "essential words"],
+    tags: ["basic words", "pronunciation", "speech", "audio"],
     questions: [
       {
         questionNumber: 1,
-        questionText: "Which word has the same vowel sound as 'meet'?",
-        questionType: "multiple_choice",
-        points: 25,
-        options: [
-          { text: "meat", isCorrect: true, explanation: "Both 'meet' and 'meat' have the long 'ee' sound." },
-          { text: "met", isCorrect: false, explanation: "This has a short 'e' sound, not long 'ee'." },
-          { text: "mate", isCorrect: false, explanation: "This has a long 'a' sound, not long 'ee'." },
-          { text: "moot", isCorrect: false, explanation: "This has a long 'oo' sound, not long 'ee'." }
-        ],
-        correctAnswer: "meat",
-        explanation: "Both 'meet' and 'meat' have the long 'ee' sound."
+        questionText: "Hello",
+        questionType: "audio",
+        points: 20,
+        phonetic: "/həˈloʊ/",
+        example: "Hello, how are you today?",
+        tips: "Stress on the second syllable. Say 'heh-LOW' with a clear 'h' sound.",
+        pronunciationGuide: "Common greeting word. Focus on clear 'h' and 'o' sounds.",
+        explanation: "A friendly greeting used to say hi to someone."
       },
       {
         questionNumber: 2,
-        questionText: "Choose the word with the correct stress pattern: 'photograph'",
-        questionType: "multiple_choice",
-        points: 25,
-        options: [
-          { text: "PHO-to-graph", isCorrect: true, explanation: "Primary stress is on the first syllable in 'photograph'." },
-          { text: "pho-TO-graph", isCorrect: false, explanation: "This puts stress on the middle syllable." },
-          { text: "pho-to-GRAPH", isCorrect: false, explanation: "This puts stress on the last syllable." },
-          { text: "pho-to-graph", isCorrect: false, explanation: "This has no stress pattern indicated." }
-        ],
-        correctAnswer: "PHO-to-graph",
-        explanation: "Primary stress is on the first syllable in 'photograph'."
+        questionText: "Water",
+        questionType: "audio",
+        points: 20,
+        phonetic: "/ˈwɔːtər/",
+        example: "I need a glass of water.",
+        tips: "Pronounce as 'WAW-ter' with stress on the first syllable. The 'a' sounds like 'aw' in 'saw'.",
+        pronunciationGuide: "Essential word for daily life. Practice the 'aw' sound.",
+        explanation: "Clear liquid that we drink and use for many purposes."
       },
       {
         questionNumber: 3,
-        questionText: "Which word rhymes with 'light'?",
-        questionType: "multiple_choice",
-        points: 25,
-        options: [
-          { text: "late", isCorrect: false, explanation: "This has a long 'a' sound, not long 'i'." },
-          { text: "lit", isCorrect: false, explanation: "This has a short 'i' sound, not long 'i'." },
-          { text: "bite", isCorrect: false, explanation: "This has a long 'i' sound but different ending." },
-          { text: "night", isCorrect: true, explanation: "Both 'light' and 'night' end with the same sound." }
-        ],
-        correctAnswer: "night",
-        explanation: "Both 'light' and 'night' end with the same sound."
+        questionText: "Thank you",
+        questionType: "audio",
+        points: 20,
+        phonetic: "/θæŋk juː/",
+        example: "Thank you for your help.",
+        tips: "Say 'THANK you' with emphasis on 'thank'. The 'th' sound is important - put your tongue between your teeth.",
+        pronunciationGuide: "Polite expression of gratitude. Master the 'th' sound.",
+        explanation: "A polite way to express gratitude or appreciation."
       },
       {
         questionNumber: 4,
-        questionText: "Identify the word with a silent letter:",
-        questionType: "multiple_choice",
-        points: 25,
-        options: [
-          { text: "know", isCorrect: true, explanation: "The 'k' in 'know' is silent." },
-          { text: "now", isCorrect: false, explanation: "All letters in 'now' are pronounced." },
-          { text: "new", isCorrect: false, explanation: "All letters in 'new' are pronounced." },
-          { text: "knee", isCorrect: false, explanation: "The 'k' in 'knee' is silent, but this is not the primary example." }
-        ],
-        correctAnswer: "know",
-        explanation: "The 'k' in 'know' is silent."
+        questionText: "Beautiful",
+        questionType: "audio",
+        points: 20,
+        phonetic: "/ˈbjuːtɪfəl/",
+        example: "What a beautiful day!",
+        tips: "Say 'BYOO-ti-ful' with stress on the first syllable. The 'u' sounds like 'you'.",
+        pronunciationGuide: "Adjective describing something very pretty or attractive.",
+        explanation: "Used to describe something that is very pretty or pleasing to look at."
+      },
+      {
+        questionNumber: 5,
+        questionText: "Please",
+        questionType: "audio",
+        points: 20,
+        phonetic: "/pliːz/",
+        example: "Please help me with this.",
+        tips: "Say 'PLEEZ' with a long 'ee' sound. Keep it short and polite.",
+        pronunciationGuide: "Polite word used when making requests. Short and clear.",
+        explanation: "A polite word used when asking for something or making a request."
       }
     ]
   },

@@ -296,16 +296,6 @@ export default function IdentificationGame() {
     }
   };
 
-  const endGame = () => {
-    Alert.alert(
-      "End Game",
-      "Are you sure you want to end the current game?",
-      [
-        { text: "Cancel", style: "cancel" },
-        { text: "End Game", style: "destructive", onPress: () => navigation.goBack() }
-      ]
-    );
-  };
 
   // Loading state
   if (loading) {
@@ -546,13 +536,6 @@ export default function IdentificationGame() {
       )}
       </Animated.View>
 
-      {/* Bottom Actions */}
-      <View style={styles.bottomActions}>
-        <TouchableOpacity style={styles.endGameButton} onPress={endGame}>
-          <FontAwesome name="stop" size={20} color="#F44336" />
-          <ThemedText style={styles.endGameText}>End Game</ThemedText>
-        </TouchableOpacity>
-      </View>
       </FeatureAccessWrapper>
     </View>
   );
@@ -806,24 +789,6 @@ const styles = StyleSheet.create({
     color: '#666666',
     marginTop: 8,
     textAlign: 'center',
-  },
-  bottomActions: {
-    padding: 20,
-    alignItems: 'center',
-  },
-  endGameButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(244, 67, 54, 0.1)',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
-    gap: 8,
-  },
-  endGameText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#F44336',
   },
   gameOverContainer: {
     flex: 1,

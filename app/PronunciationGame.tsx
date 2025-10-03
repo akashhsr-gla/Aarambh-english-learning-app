@@ -1018,7 +1018,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '600',
     marginTop: 6,
-    fontSize: 12,
+    fontSize: 10,
     textAlign: 'center',
   },
   microphoneIconContainer: {
