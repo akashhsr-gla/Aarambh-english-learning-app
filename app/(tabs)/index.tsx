@@ -82,6 +82,9 @@ export default function HomeScreen() {
           region: 'Unknown',
           rank: 'N/A'
         });
+        // Redirect unauthenticated users to Login
+        // @ts-ignore
+        navigation.navigate('LoginScreen');
       }
     } catch (error) {
       console.error('Error fetching user data:', error);
@@ -92,6 +95,11 @@ export default function HomeScreen() {
         region: 'Unknown',
         rank: 'N/A'
       });
+      // On error (likely unauthenticated), redirect to Login
+      try {
+        // @ts-ignore
+        navigation.navigate('LoginScreen');
+      } catch {}
     } finally {
       setLoading(false);
     }

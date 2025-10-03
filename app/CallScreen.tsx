@@ -83,6 +83,7 @@ export default function CallScreen() {
   const appliedIceSetRef = useRef<Set<string>>(new Set());
   const signalingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isOfferCreatedRef = useRef(false);
+  const currentUserIdRef = useRef<string | null>(null);
   
   // Load current user's region and start call on mount
   useEffect(() => {
@@ -90,9 +91,14 @@ export default function CallScreen() {
       try {
         const userResp = await authAPI.getCurrentUser();
         const rName = userResp?.data?.user?.region?.name || userResp?.data?.region?.name;
+        const userId = userResp?.data?.user?._id || userResp?.data?._id;
         if (rName) {
-          console.log('', rName);
+          console.log('User region:', rName);
           setRegionName(rName);
+        }
+        if (userId) {
+          currentUserIdRef.current = userId;
+          console.log('Current user ID stored:', userId);
         }
       } catch {}
       
@@ -440,6 +446,11 @@ export default function CallScreen() {
     }
 
     try {
+      // Determine if we are the initiator (the one who created the session)
+      // If we're waiting for partner, we're the initiator. If we joined, we're not.
+      const isInitiator = session.status === 'waiting_for_partner' || !partner;
+      console.log(`🎯 WebRTC Role: ${isInitiator ? 'INITIATOR (will create offer)' : 'JOINER (will create answer)'}`);
+
       // Create peer connection with platform-specific configuration
       const configuration = {
         iceServers: [
@@ -457,6 +468,11 @@ export default function CallScreen() {
           },
           { 
             urls: 'turn:openrelay.metered.ca:443',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          },
+          {
+            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
             username: 'openrelayproject',
             credential: 'openrelayproject'
           }
@@ -544,6 +560,7 @@ export default function CallScreen() {
       (pc as any).onicecandidate = async (event: any) => {
         if (event.candidate && session?.sessionId) {
           try {
+            console.log('🧊 Sending ICE candidate to server');
             await communicationAPI.postIce(session.sessionId, {
               candidate: JSON.stringify(event.candidate),
               sdpMid: event.candidate.sdpMid,
@@ -557,6 +574,7 @@ export default function CallScreen() {
       
       // Handle connection state changes
       (pc as any).onconnectionstatechange = () => {
+        console.log(`🔌 Connection state: ${pc.connectionState}`);
         
         // Handle connection state changes
         if (pc.connectionState === 'connected') {
@@ -574,6 +592,7 @@ export default function CallScreen() {
       
       // Add ICE connection state change handler
       (pc as any).oniceconnectionstatechange = () => {
+        console.log(`🧊 ICE connection state: ${pc.iceConnectionState}`);
         if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
           console.log('🎉 ICE connection established!');
           setIsConnected(true);
@@ -596,7 +615,7 @@ export default function CallScreen() {
       // Add timeout for ICE connection
       const iceTimeout = setTimeout(() => {
         if (pc.iceConnectionState === 'checking') {
-          // still checking after 10s
+          console.log('⚠️ ICE still checking after 10s - may need TURN server');
         }
       }, 10000);
       
@@ -606,16 +625,27 @@ export default function CallScreen() {
       // Debug: Check if we got valid media
       if (localStreamRef.current) {
         const audioTracks = localStreamRef.current.getAudioTracks();
+        console.log(`🎤 Got ${audioTracks.length} local audio tracks`);
+        const videoTracks = localStreamRef.current.getVideoTracks();
+        console.log(`📹 Got ${videoTracks.length} local video tracks`);
       }
       
-      // Create initial offer after getting media
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      await communicationAPI.postOffer(session.sessionId, {
-        type: offer.type,
-        sdp: offer.sdp
-      });
-      
+      // ONLY initiator creates the initial offer
+      if (isInitiator) {
+        console.log('🎯 INITIATOR: Creating offer...');
+        const offer = await pc.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: isVideoCall
+        });
+        await pc.setLocalDescription(offer);
+        await communicationAPI.postOffer(session.sessionId, {
+          type: offer.type,
+          sdp: offer.sdp
+        });
+        console.log('✅ INITIATOR: Offer sent to server');
+      } else {
+        console.log('🎯 JOINER: Waiting for offer from initiator...');
+      }
       
       // Start signaling polling
       startSignalingPolling();
@@ -686,48 +716,58 @@ export default function CallScreen() {
         const response = await communicationAPI.getSignaling(session.sessionId);
         const signaling = response?.data?.signaling || {};
         
+        // Use cached user ID from ref (set during initialization)
+        const currentUserId = currentUserIdRef.current;
+        
         // Handle offer - if we receive an offer and don't have a remote description yet
         if (signaling.offer?.sdp && !pcRef.current.remoteDescription) {
-          await pcRef.current.setRemoteDescription({
-            type: 'offer',
-            sdp: signaling.offer.sdp
-          });
-          
-          const answer = await pcRef.current.createAnswer();
-          await pcRef.current.setLocalDescription(answer);
-          
-          await communicationAPI.postAnswer(session.sessionId, {
-            type: answer.type,
-            sdp: answer.sdp
-          });
+          // Make sure we're not applying our own offer
+          if (currentUserId && signaling.offer.from && signaling.offer.from.toString() === currentUserId.toString()) {
+            // This is our own offer, skip it
+            console.log('🔄 Skipping own offer');
+          } else {
+            console.log('📨 Received offer from remote peer, creating answer...');
+            await pcRef.current.setRemoteDescription({
+              type: 'offer',
+              sdp: signaling.offer.sdp
+            });
+            
+            const answer = await pcRef.current.createAnswer();
+            await pcRef.current.setLocalDescription(answer);
+            
+            await communicationAPI.postAnswer(session.sessionId, {
+              type: answer.type,
+              sdp: answer.sdp
+            });
+            console.log('✅ Answer sent to server');
+          }
         }
         
         // Handle answer - if we receive an answer and have a local description but no remote
         if (signaling.answer?.sdp && pcRef.current.localDescription && !pcRef.current.remoteDescription) {
-          await pcRef.current.setRemoteDescription({
-            type: 'answer',
-            sdp: signaling.answer.sdp
-          });
+          // Make sure we're not applying our own answer
+          if (currentUserId && signaling.answer.from && signaling.answer.from.toString() === currentUserId.toString()) {
+            // This is our own answer, skip it
+            console.log('🔄 Skipping own answer');
+          } else {
+            console.log('📨 Received answer from remote peer');
+            await pcRef.current.setRemoteDescription({
+              type: 'answer',
+              sdp: signaling.answer.sdp
+            });
+            console.log('✅ Remote description set');
+          }
         }
         
-        // Create offer if we haven't yet and there's no existing offer
-        if (!signaling.offer?.sdp && !isOfferCreatedRef.current && !pcRef.current.localDescription) {
-          isOfferCreatedRef.current = true;
-          
-          const offer = await pcRef.current.createOffer();
-          await pcRef.current.setLocalDescription(offer);
-          
-          await communicationAPI.postOffer(session.sessionId, {
-            type: offer.type,
-            sdp: offer.sdp
-          });
-        }
-        
-        // Handle ICE candidates
+        // Handle ICE candidates - FILTER OUT OWN CANDIDATES
         if (Array.isArray(signaling.iceCandidates)) {
           for (const candidate of signaling.iceCandidates) {
             if (!candidate?.candidate) {
-              console.log('❌ Invalid ICE candidate:', candidate);
+              continue;
+            }
+            
+            // Skip our own ICE candidates
+            if (currentUserId && candidate.from && candidate.from.toString() === currentUserId.toString()) {
               continue;
             }
             
@@ -739,13 +779,12 @@ export default function CallScreen() {
             appliedIceSetRef.current.add(key);
             
             try {
+              console.log('🧊 Adding remote ICE candidate');
               await pcRef.current.addIceCandidate(JSON.parse(candidate.candidate));
             } catch (error) {
               console.error('❌ Failed to add ICE candidate:', error);
-              
             }
           }
-        } else {
         }
         
       } catch (error) {
