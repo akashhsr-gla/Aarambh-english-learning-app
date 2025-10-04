@@ -55,6 +55,7 @@ export default function PronunciationGame() {
   // Backend data states
   const [pronunciationData, setPronunciationData] = useState<PronunciationWord[]>([]);
   const [gameId, setGameId] = useState<string>('pronunciation-game-id');
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -73,7 +74,7 @@ export default function PronunciationGame() {
     if (!currentWord || pronunciationData.length === 0) return;
     
     try {
-      await sessionsAPI.createOrUpdateGameSession({
+      const response = await sessionsAPI.createOrUpdateGameSession({
         gameId: gameId,
         gameType: 'pronunciation',
         difficulty: currentWord.difficulty.toLowerCase(),
@@ -83,6 +84,11 @@ export default function PronunciationGame() {
         score,
         totalQuestions: pronunciationData.length
       });
+      
+      // Store the session ID if we get one
+      if (response.success && response.data && response.data.sessionId) {
+        setActiveSessionId(response.data.sessionId);
+      }
     } catch (error) {
       console.error('Error saving pronunciation session:', error);
       // Don't show error to user as it's not critical
@@ -500,7 +506,7 @@ export default function PronunciationGame() {
         `Your final score: ${score} points`,
         [
           { text: "Practice Again", onPress: resetGame },
-          { text: "Return to Home", onPress: returnToHome }
+          { text: "Return to Home", onPress: handleBackPress }
         ]
       );
     }
@@ -518,7 +524,17 @@ export default function PronunciationGame() {
     }
   };
 
-  const returnToHome = () => {
+  const returnToHome = async () => {
+    try {
+      // End active session if exists
+      if (activeSessionId) {
+        await sessionsAPI.endGameSession(activeSessionId);
+        console.log('🎤 Pronunciation session ended:', activeSessionId);
+      }
+    } catch (error) {
+      console.error('Error ending pronunciation session:', error);
+    }
+    
     // Clean up any existing recording
     if (recording || recordingRef.current) {
       recording?.stopAndUnloadAsync().catch(console.error);
@@ -531,6 +547,31 @@ export default function PronunciationGame() {
     }
     
     // Navigate back to home
+    navigation.goBack();
+  };
+
+  const handleBackPress = async () => {
+    try {
+      // End active session if exists
+      if (activeSessionId) {
+        await sessionsAPI.endGameSession(activeSessionId);
+        console.log('🎤 Pronunciation session ended:', activeSessionId);
+      }
+    } catch (error) {
+      console.error('Error ending pronunciation session:', error);
+    }
+    
+    // Clean up any existing recording
+    if (recording || recordingRef.current) {
+      recording?.stopAndUnloadAsync().catch(console.error);
+      recordingRef.current?.stopAndUnloadAsync().catch(console.error);
+    }
+    
+    // Clean up sound
+    if (sound) {
+      sound.unloadAsync().catch(console.error);
+    }
+    
     navigation.goBack();
   };
 
@@ -552,7 +593,7 @@ export default function PronunciationGame() {
         end={{ x: 1, y: 1 }}
         style={styles.gradientBackground}
       />
-      <GameHeader title="Pronunciation Practice" showBackButton onBackPress={() => navigation.goBack()} />
+      <GameHeader title="Pronunciation Practice" showBackButton onBackPress={handleBackPress} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#226cae" />
           <ThemedText style={styles.loadingText}>Loading pronunciation words...</ThemedText>
@@ -570,7 +611,7 @@ export default function PronunciationGame() {
           end={{ x: 1, y: 1 }}
           style={styles.gradientBackground}
         />
-        <GameHeader title="Pronunciation Practice" showBackButton onBackPress={() => navigation.goBack()} />
+        <GameHeader title="Pronunciation Practice" showBackButton onBackPress={handleBackPress} />
         <View style={styles.errorContainer}>
           <FontAwesome name="exclamation-triangle" size={48} color="#dc2929" />
           <ThemedText style={styles.errorText}>{error}</ThemedText>
@@ -591,7 +632,7 @@ export default function PronunciationGame() {
           end={{ x: 1, y: 1 }}
           style={styles.gradientBackground}
         />
-        <GameHeader title="Pronunciation Practice" showBackButton onBackPress={() => navigation.goBack()} />
+        <GameHeader title="Pronunciation Practice" showBackButton onBackPress={handleBackPress} />
         <View style={styles.errorContainer}>
           <FontAwesome name="question-circle" size={48} color="#666" />
           <ThemedText style={styles.errorText}>No pronunciation words available</ThemedText>
@@ -609,7 +650,7 @@ export default function PronunciationGame() {
         style={styles.gradientBackground}
       />
       
-      <GameHeader title="Pronunciation Practice" showBackButton onBackPress={() => navigation.goBack()} />
+      <GameHeader title="Pronunciation Practice" showBackButton onBackPress={handleBackPress} />
       
       <FeatureAccessWrapper
         featureKey="games"

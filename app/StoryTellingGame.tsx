@@ -9,14 +9,10 @@ import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
 import FeatureAccessWrapper from './components/FeatureAccessWrapper';
 import { useFeatureAccess } from './hooks/useFeatureAccess';
-import { evaluation, gamesAPI } from './services/api';
+import { evaluation, gamesAPI, sessionsAPI } from './services/api';
 
 const { width, height } = Dimensions.get('window');
 
-// Define filter types
-type FilterType = 'all' | 'exams' | 'profession';
-type ExamType = 'all' | 'nda' | 'ssc' | 'banking' | 'upsc' | 'cat';
-type ProfessionType = 'all' | 'engineering' | 'medical' | 'teaching' | 'business' | 'student';
 
 // Types for story prompts from backend
 interface StoryPrompt {
@@ -45,17 +41,13 @@ export default function StoryTellingGame() {
   
   // Backend data states
   const [storyPrompts, setStoryPrompts] = useState<StoryPrompt[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
   // Feature access control
   const { canAccess: canPlayGames, featureInfo: gameFeatureInfo } = useFeatureAccess('games');
   
-  // Filter states
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [filterType, setFilterType] = useState<FilterType>('all');
-  const [selectedExam, setSelectedExam] = useState<ExamType>('all');
-  const [selectedProfession, setSelectedProfession] = useState<ProfessionType>('all');
   
   // Animation values
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -63,6 +55,31 @@ export default function StoryTellingGame() {
   const inputRef = useRef<TextInput>(null);
   
   const currentStory = storyPrompts[currentStoryIndex];
+  
+  // Save storytelling session
+  const saveStorytellingSession = async () => {
+    if (!currentStory || storyPrompts.length === 0) return;
+    
+    try {
+      const response = await sessionsAPI.createOrUpdateGameSession({
+        gameId: 'storytelling-game-id',
+        gameType: 'storytelling',
+        difficulty: currentStory.difficulty.toLowerCase(),
+        currentQuestionIndex: currentStoryIndex,
+        timeLeft,
+        answers: [],
+        score,
+        totalQuestions: storyPrompts.length
+      });
+      
+      // Store the session ID if we get one
+      if (response.success && response.data && response.data.sessionId) {
+        setActiveSessionId(response.data.sessionId);
+      }
+    } catch (error) {
+      console.error('Error saving storytelling session:', error);
+    }
+  };
   
   // Fetch story prompts from backend
   useEffect(() => {
@@ -180,6 +197,13 @@ export default function StoryTellingGame() {
     
     setKeywordsUsed(usedKeywords);
   }, [storyText, currentStory]);
+  
+  // Save session when game state changes
+  useEffect(() => {
+    if (storyPrompts.length > 0 && !gameOver && currentStoryIndex > 0) {
+      saveStorytellingSession();
+    }
+  }, [currentStoryIndex, score, timeLeft]);
   
   const handleTimeout = () => {
     Keyboard.dismiss();
@@ -300,7 +324,7 @@ export default function StoryTellingGame() {
         `Your final score: ${score} out of ${storyPrompts.length * 110}`,
         [
           { text: "Play Again", onPress: resetGame },
-          { text: "Back to Explore", onPress: () => navigation.goBack() }
+          { text: "Back to Explore", onPress: handleBackPress }
         ]
       );
     }
@@ -314,6 +338,20 @@ export default function StoryTellingGame() {
     setStoryText("");
     setKeywordsUsed([]);
     setWordCount(0);
+  };
+
+  const handleBackPress = async () => {
+    try {
+      // End active session if exists
+      if (activeSessionId) {
+        await sessionsAPI.endGameSession(activeSessionId);
+        console.log('📖 Storytelling session ended:', activeSessionId);
+      }
+    } catch (error) {
+      console.error('Error ending storytelling session:', error);
+    }
+    
+    navigation.goBack();
   };
   
   const formatTime = (seconds: number) => {
@@ -340,7 +378,7 @@ export default function StoryTellingGame() {
           end={{ x: 1, y: 1 }}
           style={styles.gradientBackground}
         />
-        <GameHeader title="Story Telling" showBackButton onBackPress={() => navigation.goBack()} />
+        <GameHeader title="Story Telling" showBackButton onBackPress={handleBackPress} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#226cae" />
           <ThemedText style={styles.loadingText}>Loading story prompts...</ThemedText>
@@ -358,7 +396,7 @@ export default function StoryTellingGame() {
           end={{ x: 1, y: 1 }}
           style={styles.gradientBackground}
         />
-        <GameHeader title="Story Telling" showBackButton onBackPress={() => navigation.goBack()} />
+        <GameHeader title="Story Telling" showBackButton onBackPress={handleBackPress} />
         <View style={styles.errorContainer}>
           <FontAwesome name="exclamation-triangle" size={48} color="#dc2929" />
           <ThemedText style={styles.errorText}>{error}</ThemedText>
@@ -379,7 +417,7 @@ export default function StoryTellingGame() {
           end={{ x: 1, y: 1 }}
           style={styles.gradientBackground}
         />
-        <GameHeader title="Story Telling" showBackButton onBackPress={() => navigation.goBack()} />
+        <GameHeader title="Story Telling" showBackButton onBackPress={handleBackPress} />
         <View style={styles.errorContainer}>
           <FontAwesome name="question-circle" size={48} color="#666" />
           <ThemedText style={styles.errorText}>No story prompts available</ThemedText>
@@ -405,96 +443,6 @@ export default function StoryTellingGame() {
         style={styles.container}
         navigation={navigation}
       >
-        {/* Filter Section */}
-        <View style={styles.filterContainer}>
-          <TouchableOpacity 
-            style={styles.filterButton}
-            onPress={() => setFilterOpen(!filterOpen)}
-          >
-            <FontAwesome name="filter" size={16} color="#226cae" />
-            <ThemedText style={styles.filterButtonText}>
-              {filterType === 'all' ? 'Filter' : 
-               filterType === 'exams' ? `Exam: ${selectedExam}` : 
-               `Profession: ${selectedProfession}`}
-            </ThemedText>
-            <FontAwesome name={filterOpen ? "chevron-up" : "chevron-down"} size={14} color="#666666" />
-          </TouchableOpacity>
-          
-          {filterOpen && (
-            <ThemedView style={styles.filterDropdown}>
-              <View style={styles.filterTabs}>
-                <TouchableOpacity 
-                  style={[styles.filterTab, filterType === 'all' && styles.activeFilterTab]}
-                  onPress={() => setFilterType('all')}
-                >
-                  <ThemedText style={[styles.filterTabText, filterType === 'all' && styles.activeFilterTabText]}>
-                    All
-                  </ThemedText>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.filterTab, filterType === 'exams' && styles.activeFilterTab]}
-                  onPress={() => setFilterType('exams')}
-                >
-                  <ThemedText style={[styles.filterTabText, filterType === 'exams' && styles.activeFilterTabText]}>
-                    Exams
-                  </ThemedText>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.filterTab, filterType === 'profession' && styles.activeFilterTab]}
-                  onPress={() => setFilterType('profession')}
-                >
-                  <ThemedText style={[styles.filterTabText, filterType === 'profession' && styles.activeFilterTabText]}>
-                    Profession
-                  </ThemedText>
-                </TouchableOpacity>
-              </View>
-              
-              {filterType === 'exams' && (
-                <View style={styles.filterOptions}>
-                  {['all', 'nda', 'ssc', 'banking', 'upsc', 'cat'].map((exam) => (
-                    <TouchableOpacity 
-                      key={exam}
-                      style={[styles.filterOption, selectedExam === exam && styles.selectedFilterOption]}
-                      onPress={() => {
-                        setSelectedExam(exam as ExamType);
-                        setFilterOpen(false);
-                      }}
-                    >
-                      <ThemedText style={[styles.filterOptionText, selectedExam === exam && styles.selectedFilterOptionText]}>
-                        {exam.toUpperCase()}
-                      </ThemedText>
-                      {selectedExam === exam && (
-                        <FontAwesome name="check" size={14} color="#226cae" />
-                      )}
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-              
-              {filterType === 'profession' && (
-                <View style={styles.filterOptions}>
-                  {['all', 'engineering', 'medical', 'teaching', 'business', 'student'].map((profession) => (
-                    <TouchableOpacity 
-                      key={profession}
-                      style={[styles.filterOption, selectedProfession === profession && styles.selectedFilterOption]}
-                      onPress={() => {
-                        setSelectedProfession(profession as ProfessionType);
-                        setFilterOpen(false);
-                      }}
-                    >
-                      <ThemedText style={[styles.filterOptionText, selectedProfession === profession && styles.selectedFilterOptionText]}>
-                        {profession.charAt(0).toUpperCase() + profession.slice(1)}
-                      </ThemedText>
-                      {selectedProfession === profession && (
-                        <FontAwesome name="check" size={14} color="#226cae" />
-                      )}
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-            </ThemedView>
-          )}
-        </View>
         
         <View style={styles.scoreContainer}>
           <View style={styles.scoreItem}>
@@ -1049,95 +997,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 16,
     marginRight: 8,
-  },
-  // Filter styles
-  filterContainer: {
-    marginHorizontal: 20,
-    marginTop: 10,
-    marginBottom: 10,
-    zIndex: 10,
-  },
-  filterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  filterButtonText: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#333333',
-  },
-  filterDropdown: {
-    position: 'absolute',
-    top: 45,
-    left: 0,
-    right: 0,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
-    padding: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
-    zIndex: 10,
-  },
-  filterTabs: {
-    flexDirection: 'row',
-    marginBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.05)',
-  },
-  filterTab: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  activeFilterTab: {
-    borderBottomWidth: 2,
-    borderBottomColor: '#226cae',
-  },
-  filterTabText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#666666',
-  },
-  activeFilterTabText: {
-    color: '#226cae',
-    fontWeight: '600',
-  },
-  filterOptions: {
-    maxHeight: 200,
-  },
-  filterOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 0, 0, 0.05)',
-  },
-  selectedFilterOption: {
-    backgroundColor: 'rgba(34, 108, 174, 0.05)',
-  },
-  filterOptionText: {
-    fontSize: 14,
-    color: '#333333',
-  },
-  selectedFilterOptionText: {
-    color: '#226cae',
-    fontWeight: '600',
   },
   evaluationLoadingContainer: {
     alignItems: 'center',

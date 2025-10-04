@@ -531,6 +531,12 @@ export const sessionsAPI = {
     });
   },
 
+  endGameSession: async (sessionId) => {
+    return await apiRequest(`/sessions/games/${sessionId}/end`, {
+      method: 'POST'
+    });
+  },
+
   // Group discussion session management
   createOrUpdateGroupSession: async (groupData) => {
     return await apiRequest('/sessions/groups/create-or-update', {

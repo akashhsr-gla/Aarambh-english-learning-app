@@ -5,6 +5,7 @@ const Game = require('../models/Game');
 const Session = require('../models/Session');
 const User = require('../models/User');
 const { authenticateToken, requireAdmin, requireSubscription } = require('../middleware/auth');
+const { convertGoogleDriveUrl, validateGoogleDriveUrl } = require('../utils/googleDriveHelper');
 
 // Validation middleware
 const validateGame = [
@@ -30,6 +31,25 @@ const validateQuestion = [
   body('questionType').isIn(['multiple_choice', 'true_false', 'fill_blank', 'audio', 'image', 'video']).withMessage('Invalid question type'),
   body('points').isInt({ min: 1 }).withMessage('Points must be positive')
 ];
+
+// Helper function to process Google Drive URLs in game questions
+const processGoogleDriveUrls = (questions) => {
+  if (!questions || !Array.isArray(questions)) return questions;
+  
+  return questions.map(question => {
+    if (question.mediaUrl && question.mediaType === 'image') {
+      const validation = validateGoogleDriveUrl(question.mediaUrl);
+      if (validation.isValid) {
+        // Convert Google Drive URL to direct image URL
+        question.mediaUrl = convertGoogleDriveUrl(question.mediaUrl, 'image');
+        question.googleDriveProcessed = true;
+      } else {
+        console.warn(`Invalid Google Drive URL in question: ${question.mediaUrl}`);
+      }
+    }
+    return question;
+  });
+};
 
 // 1. CREATE GAME (Admin only)
 router.post('/', authenticateToken, requireAdmin, validateGame, async (req, res) => {
@@ -118,6 +138,12 @@ router.post('/', authenticateToken, requireAdmin, validateGame, async (req, res)
       });
     }
 
+    // Process Google Drive URLs for identification games
+    let processedQuestions = questions;
+    if (gameType === 'identification' && questions) {
+      processedQuestions = processGoogleDriveUrls(questions);
+    }
+
     const game = new Game({
       title,
       description,
@@ -128,7 +154,7 @@ router.post('/', authenticateToken, requireAdmin, validateGame, async (req, res)
       maxScore,
       passingScore,
       totalQuestions,
-      questions,
+      questions: processedQuestions,
       isPremium,
       requiresSubscription,
       categories: categories || [],
@@ -182,7 +208,7 @@ router.get('/', authenticateToken, async (req, res) => {
     res.json({
       success: true,
       data: {
-        games,
+        games: processedGames,
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),
@@ -258,6 +284,11 @@ router.put('/:id', authenticateToken, requireAdmin, async (req, res) => {
         success: false,
         message: 'Game not found'
       });
+    }
+
+    // Process Google Drive URLs for identification games if questions are being updated
+    if (game.gameType === 'identification' && req.body.questions) {
+      req.body.questions = processGoogleDriveUrls(req.body.questions);
     }
 
     // Update game fields
@@ -617,12 +648,25 @@ router.get('/type/:gameType', async (req, res) => {
       .limit(parseInt(limit))
       .skip((parseInt(page) - 1) * parseInt(limit));
 
+    // Process Google Drive URLs for identification games
+    console.log('🔍 Processing games for type:', req.params.gameType);
+    console.log('📊 Found games:', games.length);
+    
+    const processedGames = games.map(game => {
+      if (game.gameType === 'identification' && game.questions) {
+        console.log('🖼️ Processing identification game:', game.title);
+        game.questions = processGoogleDriveUrls(game.questions);
+        console.log('✅ Processed questions:', game.questions.length);
+      }
+      return game;
+    });
+
     const total = await Game.countDocuments(query);
 
     res.json({
       success: true,
       data: {
-        games,
+        games: processedGames,
         pagination: {
           page: parseInt(page),
           limit: parseInt(limit),

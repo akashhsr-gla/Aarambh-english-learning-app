@@ -2,11 +2,12 @@ import { FontAwesome } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, Image, Keyboard, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, Dimensions, Keyboard, StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 
 import GameHeader from '../components/GameHeader';
 import { ThemedText } from '../components/ThemedText';
 import FeatureAccessWrapper from './components/FeatureAccessWrapper';
+import ImageViewer from './components/ImageViewer';
 import { useFeatureAccess } from './hooks/useFeatureAccess';
 import { gamesAPI, sessionsAPI } from './services/api';
 
@@ -52,6 +53,7 @@ export default function IdentificationGame() {
   const [gameItems, setGameItems] = useState<IdentificationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
   // Feature access control
   const { canAccess: canPlayGames, featureInfo: gameFeatureInfo } = useFeatureAccess('games');
@@ -85,7 +87,7 @@ export default function IdentificationGame() {
     if (gameItems.length === 0) return;
     
     try {
-      await sessionsAPI.createOrUpdateGameSession({
+      const response = await sessionsAPI.createOrUpdateGameSession({
         gameId: 'identification-game-id',
         gameType: 'identification',
         difficulty: currentItem.difficulty.toLowerCase(),
@@ -95,6 +97,11 @@ export default function IdentificationGame() {
         score,
         totalQuestions: gameItems.length
       });
+      
+      // Store the session ID if we get one
+      if (response.success && response.data && response.data.sessionId) {
+        setActiveSessionId(response.data.sessionId);
+      }
     } catch (error) {
       console.error('Error saving identification session:', error);
     }
@@ -289,6 +296,20 @@ export default function IdentificationGame() {
     }
   };
 
+  const handleBackPress = async () => {
+    try {
+      // End active session if exists
+      if (activeSessionId) {
+        await sessionsAPI.endGameSession(activeSessionId);
+        console.log('🎯 Identification session ended:', activeSessionId);
+      }
+    } catch (error) {
+      console.error('Error ending identification session:', error);
+    }
+    
+    navigation.goBack();
+  };
+
   const toggleHint = () => {
     if (!showHint && !showResult) {
       setShowHint(true);
@@ -307,7 +328,7 @@ export default function IdentificationGame() {
         end={{ x: 1, y: 1 }}
         style={styles.gradientBackground}
       />
-      <GameHeader title="Identification Game" showBackButton onBackPress={() => navigation.goBack()} />
+      <GameHeader title="Identification Game" showBackButton onBackPress={handleBackPress} />
         <View style={styles.loadingContainer}>
           <FontAwesome name="spinner" size={50} color="#dc2929" />
           <ThemedText style={styles.loadingText}>Loading identification games...</ThemedText>
@@ -326,7 +347,7 @@ export default function IdentificationGame() {
           end={{ x: 1, y: 1 }}
           style={styles.gradientBackground}
         />
-        <GameHeader title="Identification Game" showBackButton onBackPress={() => navigation.goBack()} />
+        <GameHeader title="Identification Game" showBackButton onBackPress={handleBackPress} />
         <View style={styles.errorContainer}>
           <FontAwesome name="exclamation-triangle" size={50} color="#dc2929" />
           <ThemedText style={styles.errorText}>{error}</ThemedText>
@@ -349,7 +370,7 @@ export default function IdentificationGame() {
           style={styles.gradientBackground}
         />
         
-        <GameHeader title="Game Complete!" showBackButton onBackPress={() => navigation.goBack()} />
+        <GameHeader title="Game Complete!" showBackButton onBackPress={handleBackPress} />
         
         <View style={styles.gameOverContainer}>
           <FontAwesome name="trophy" size={80} color="#FFA500" />
@@ -365,10 +386,10 @@ export default function IdentificationGame() {
               <ThemedText style={styles.playAgainText}>Play Again</ThemedText>
                   </TouchableOpacity>
             
-            <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+            <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
               <FontAwesome name="home" size={20} color="#666666" />
               <ThemedText style={styles.backText}>Back to Games</ThemedText>
-                  </TouchableOpacity>
+            </TouchableOpacity>
               </View>
           </View>
       </View>
@@ -384,7 +405,7 @@ export default function IdentificationGame() {
         style={styles.gradientBackground}
       />
       
-      <GameHeader title="Identification Game" showBackButton onBackPress={() => navigation.goBack()} />
+      <GameHeader title="Identification Game" showBackButton onBackPress={handleBackPress} />
       
       <FeatureAccessWrapper
         featureKey="games"
@@ -453,19 +474,22 @@ export default function IdentificationGame() {
           </View>
           
         {/* Media/Icon Display */}
-          <View style={styles.iconContainer}>
+          <View style={styles.mediaContainer}>
           {currentItem.imageUrl ? (
-            // eslint-disable-next-line react/no-unstable-nested-components
-            <Image
-              source={{ uri: currentItem.imageUrl }}
-              style={{ width: 180, height: 180, borderRadius: 12 }}
-              resizeMode="cover"
-              onError={() => {
-                console.log('Image failed to load, showing fallback');
+            <ImageViewer
+              imageUrl={currentItem.imageUrl}
+              title={`Question ${currentItemIndex + 1}`}
+              style={styles.imageViewer}
+              showControls={false}
+              resizeMode="contain"
+              onError={(error: string) => {
+                console.error('Image load error:', error);
               }}
             />
           ) : (
-            <FontAwesome name="question-circle" size={120} color="#dc2929" />
+            <View style={styles.fallbackContainer}>
+              <FontAwesome name="question-circle" size={120} color="#dc2929" />
+            </View>
           )}
           </View>
           
@@ -671,19 +695,30 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
   },
-  iconContainer: {
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: 'rgba(220, 41, 41, 0.1)',
-    justifyContent: 'center',
-    alignItems: 'center',
+  mediaContainer: {
+    width: '100%',
+    maxWidth: 300,
+    height: 300,
     marginBottom: 20,
+    borderRadius: 12,
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
+  },
+  imageViewer: {
+    width: '100%',
+    height: '100%',
+  },
+  fallbackContainer: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: 'rgba(220, 41, 41, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
   },
   questionText: {
     fontSize: 24,

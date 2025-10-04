@@ -740,7 +740,40 @@ router.post('/games/:sessionId/resume', authenticateToken, async (req, res) => {
   }
 });
 
-// 11. CREATE OR UPDATE GROUP DISCUSSION SESSION
+// 11. END GAME SESSION
+router.post('/games/:sessionId/end', authenticateToken, async (req, res) => {
+  try {
+    const session = await Session.findOne({
+      _id: req.params.sessionId,
+      host: req.user._id,
+      sessionType: 'game'
+    });
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: 'Game session not found'
+      });
+    }
+
+    session.endSession();
+    await session.save();
+
+    res.json({
+      success: true,
+      message: 'Game session ended successfully'
+    });
+
+  } catch (error) {
+    console.error('End game session error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// 12. CREATE OR UPDATE GROUP DISCUSSION SESSION
 router.post('/groups/create-or-update', authenticateToken, async (req, res) => {
   try {
     const { 
