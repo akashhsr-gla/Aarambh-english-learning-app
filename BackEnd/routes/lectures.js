@@ -3,7 +3,7 @@ const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const VideoLecture = require('../models/VideoLecture');
 const User = require('../models/User');
-const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { authenticateToken, requireAdmin, optionalAuth } = require('../middleware/auth');
 const { convertGoogleDriveUrl, validateGoogleDriveUrl } = require('../utils/googleDriveHelper');
 
 // Validation middleware
@@ -167,7 +167,7 @@ router.post('/', authenticateToken, requireAdmin, validateLecture, async (req, r
 });
 
 // 2. GET ALL LECTURES (All users can access)
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/', optionalAuth, async (req, res) => {
   try {
     const { 
       active, 
@@ -184,7 +184,17 @@ router.get('/', authenticateToken, async (req, res) => {
 
     // Build filter
     let filter = {};
-    if (active !== undefined) filter.isActive = active === 'true';
+    
+    // Default to only show active and published lectures for public access
+    if (active !== undefined) {
+      filter.isActive = active === 'true';
+    } else {
+      filter.isActive = true;
+    }
+    
+    // Always filter for published lectures
+    filter.isPublished = true;
+    
     if (premium !== undefined) filter.isPremium = premium === 'true';
     if (difficulty) filter.difficulty = difficulty;
     if (region) filter.region = region;
@@ -264,7 +274,7 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 // 3. GET LECTURE BY ID (All users can access)
-router.get('/:id', authenticateToken, async (req, res) => {
+router.get('/:id', optionalAuth, async (req, res) => {
   try {
     const { id } = req.params;
 
