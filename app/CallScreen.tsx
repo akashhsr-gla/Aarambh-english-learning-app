@@ -66,6 +66,7 @@ export default function CallScreen() {
   const [videoRequestFrom, setVideoRequestFrom] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionEstablished, setConnectionEstablished] = useState(false);
+  const [hasVideoStream, setHasVideoStream] = useState(false);
 
   // Feature access control
   const { canAccess: canMakeCalls, featureInfo: callFeatureInfo } = useFeatureAccess('video_calls');
@@ -564,6 +565,14 @@ export default function CallScreen() {
         } else {
           // Android/iOS platform - streams are handled by RTCView
           setIsConnected(true);
+          
+          // For mobile, ensure we have the stream for RTCView
+          if (event.track.kind === 'video') {
+            console.log('📹 Remote video track received (Mobile)');
+            setHasVideoStream(true);
+            // Force re-render by updating state
+            setConnectionEstablished(true);
+          }
         }
       };
       
@@ -691,6 +700,7 @@ export default function CallScreen() {
         };
         
         stream = await mediaDevices.getUserMedia(constraints);
+        console.log('📹 Local video stream created for Android:', stream.getVideoTracks().length, 'video tracks');
       }
       
       localStreamRef.current = stream;
@@ -1087,15 +1097,20 @@ export default function CallScreen() {
                 muted={false}
               />
             ) : (
-              RTCView && remoteStreamRef.current ? (
+              RTCView && hasVideoStream ? (
                 <RTCView
-                  streamURL={remoteStreamRef.current.toURL()}
+                  streamURL={remoteStreamRef.current?.toURL() || ''}
                   style={styles.remoteVideo}
                   mirror={false}
                   objectFit="cover"
                 />
               ) : (
-            <FontAwesome name="user" size={100} color="#FFFFFF" style={styles.videoPlaceholder} />
+                <View style={styles.videoPlaceholderContainer}>
+                  <FontAwesome name="user" size={100} color="#FFFFFF" style={styles.videoPlaceholder} />
+                  <ThemedText style={styles.videoPlaceholderText}>
+                    {hasVideoStream ? 'Video Loading...' : 'No Video'}
+                  </ThemedText>
+                </View>
               )
             )}
             {!isConnected && (
@@ -1126,7 +1141,7 @@ export default function CallScreen() {
                     objectFit="cover"
                   />
                 ) : (
-              <FontAwesome name="user" size={40} color="#FFFFFF" />
+                  <FontAwesome name="user" size={40} color="#FFFFFF" />
                 )
               )}
             </View>
@@ -1451,6 +1466,18 @@ const styles = StyleSheet.create({
   },
   videoPlaceholder: {
     opacity: 0.5,
+  },
+  videoPlaceholderContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#1a5085',
+  },
+  videoPlaceholderText: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 16,
+    marginTop: 10,
+    textAlign: 'center',
   },
   connectingOverlay: {
     position: 'absolute',
