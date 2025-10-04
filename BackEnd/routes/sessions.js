@@ -969,6 +969,7 @@ router.post('/lectures/create-or-update', authenticateToken, async (req, res) =>
       }
     } else {
       // Create new lecture session
+      console.log('Creating new lecture session for lecture:', lectureId);
       session = new Session({
         sessionId: `lecture_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         sessionType: 'lecture',
@@ -976,7 +977,7 @@ router.post('/lectures/create-or-update', authenticateToken, async (req, res) =>
         host: req.user._id,
         participants: [{
           user: req.user._id,
-          role: 'viewer',
+          role: 'participant',
           joinedAt: new Date()
         }],
         lectureSession: {
@@ -991,8 +992,10 @@ router.post('/lectures/create-or-update', authenticateToken, async (req, res) =>
         }
       });
       
+      console.log('Starting lecture session...');
       session.startLecture(lectureId, totalDuration || lecture.duration);
       if (position > 0) {
+        console.log('Updating lecture progress...');
         session.updateLectureProgress(position, action);
       }
     }

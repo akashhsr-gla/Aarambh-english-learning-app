@@ -178,39 +178,6 @@ export default function LearnScreen() {
         {/* Header */}
         <Header title="Learn English" />
         
-        {/* Progress Section */}
-        <ThemedView style={styles.progressContainer}>
-          <View style={styles.progressHeader}>
-            <ThemedText style={styles.progressTitle}>Your Progress</ThemedText>
-            <ThemedText style={styles.progressStats}>
-              {completedLessonsCount}/{totalLessons} lectures completed
-            </ThemedText>
-          </View>
-          
-          <View style={styles.progressBarContainer}>
-            <View 
-              style={[
-                styles.progressBar, 
-                { width: `${progressPercentage}%` }
-              ]} 
-            />
-          </View>
-          
-          <View style={styles.progressDetails}>
-            <View style={styles.progressDetail}>
-              <FontAwesome name="check-circle" size={16} color="#4CAF50" />
-              <ThemedText style={styles.progressDetailText}>
-                {completedLessonsCount} Completed
-              </ThemedText>
-            </View>
-            <View style={styles.progressDetail}>
-              <FontAwesome name="circle-o" size={16} color="#dc2929" />
-              <ThemedText style={styles.progressDetailText}>
-                {totalLessons - completedLessonsCount} Remaining
-              </ThemedText>
-            </View>
-          </View>
-        </ThemedView>
         
         {/* Categories */}
         <ScrollView 
