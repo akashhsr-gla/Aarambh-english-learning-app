@@ -1,3 +1,4 @@
+
 import { FontAwesome } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { BlurView } from 'expo-blur';
@@ -53,7 +54,7 @@ export default function CallScreen() {
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeakerOn, setIsSpeakerOn] = useState(false);
   const [isVideoCall, setIsVideoCall] = useState(callType === 'video');
-  const [callStatus, setCallStatus] = useState('finding'); // finding, connecting, active, ending
+  const [callStatus, setCallStatus] = useState('finding');
   const [partner, setPartner] = useState<Partner | null>(null);
   const [session, setSession] = useState<CallSession | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -66,14 +67,14 @@ export default function CallScreen() {
   const [videoRequestFrom, setVideoRequestFrom] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionEstablished, setConnectionEstablished] = useState(false);
+  const [localStream, setLocalStream] = useState<any>(null);
+  const [remoteStream, setRemoteStream] = useState<any>(null);
 
-  // Feature access control
   const { canAccess: canMakeCalls, featureInfo: callFeatureInfo } = useFeatureAccess('video_calls');
   
   const cancelingRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   
-  // WebRTC refs
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<any>(null);
   const remoteStreamRef = useRef<any>(null);
@@ -85,7 +86,6 @@ export default function CallScreen() {
   const isOfferCreatedRef = useRef(false);
   const currentUserIdRef = useRef<string | null>(null);
   
-  // Load current user's region and start call on mount
   useEffect(() => {
     const initialize = async () => {
       try {
@@ -100,22 +100,18 @@ export default function CallScreen() {
         }
       } catch {}
       
-      // Initialize platform-specific audio handling
       if (Platform.OS === 'web') {
         try {
-          // Create audio context to enable audio playback (Web only)
           const AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
           if (AudioContext) {
             const audioContext = new AudioContext();
             
-            // Resume audio context on user interaction
             const resumeAudio = () => {
               if (audioContext.state === 'suspended') {
                 audioContext.resume();
               }
             };
             
-            // Add event listeners for user interaction
             document.addEventListener('click', resumeAudio, { once: true });
             document.addEventListener('touchstart', resumeAudio, { once: true });
           }
@@ -123,7 +119,15 @@ export default function CallScreen() {
           console.error('❌ Failed to create audio context:', error);
         }
       } else {
-        // For Android/iOS, ensure we have proper permissions
+        try {
+          if (mediaDevices) {
+            await mediaDevices.setAudioOutput('speaker');
+            setIsSpeakerOn(true);
+            console.log('📱 Android: Audio output set to speaker by default');
+          }
+        } catch (error) {
+          console.error('❌ Failed to set default audio output:', error);
+        }
       }
       
       await findPartnerAndInitiateCall();
@@ -136,7 +140,6 @@ export default function CallScreen() {
     };
   }, []);
   
-  // Timer for call duration
   useEffect(() => {
     if (callStatus === 'active') {
       timerRef.current = setInterval(() => {
@@ -157,7 +160,6 @@ export default function CallScreen() {
   }, [callStatus]);
   
   const cleanup = useCallback(() => {
-    // Clear timers
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
@@ -168,7 +170,6 @@ export default function CallScreen() {
       signalingIntervalRef.current = null;
     }
     
-    // Close WebRTC connection
     try {
       if (localStreamRef.current) {
         localStreamRef.current.getTracks().forEach((track: any) => {
@@ -195,6 +196,9 @@ export default function CallScreen() {
           localVideoElRef.current.srcObject = null;
         }
       }
+      
+      setLocalStream(null);
+      setRemoteStream(null);
     } catch (e) {
       console.error('Cleanup error:', e);
     }
@@ -206,11 +210,9 @@ export default function CallScreen() {
       setError(null);
       setWaitingMessage(null);
       
-      // Check if user already has an active session
       const sessionsResponse = await communicationAPI.getActiveSessions();
       
       if (sessionsResponse.success && sessionsResponse.data?.sessions?.length > 0) {
-        // Found active session - resume it
         const activeSession = sessionsResponse.data.sessions[0];
         
         if (activeSession.status === 'waiting_for_partner') {
@@ -226,7 +228,6 @@ export default function CallScreen() {
           return;
         }
         
-        // Set basic session info for active call
         setSession({
           sessionId: activeSession._id,
           sessionType: activeSession.sessionType || (callType === 'video' ? 'video_call' : 'voice_call'),
@@ -235,7 +236,6 @@ export default function CallScreen() {
           participants: activeSession.participants || []
         });
         
-        // Extract partner info
         const participants = activeSession.participants || [];
         const partnerParticipant = participants.find((p: any) => p?.role === 'participant');
         
@@ -255,13 +255,11 @@ export default function CallScreen() {
         return;
       }
       
-      // No active session - find a partner from same region
       const sessionType = callType === 'video' ? 'video_call' : 'voice_call';
       const partnerResponse = await communicationAPI.findPartner(sessionType);
       
       if (partnerResponse.success) {
         if (partnerResponse.data?.partner) {
-          // Found a partner immediately - they were waiting!
           setPartner(partnerResponse.data.partner);
           const s = partnerResponse.data.session;
           const sessionData = {
@@ -275,7 +273,6 @@ export default function CallScreen() {
           setSession(sessionData);
           setCallStatus('active');
         } else if (partnerResponse.data?.waitingInQueue) {
-          // We're now waiting for someone else to join
           const s = partnerResponse.data.session;
           const sessionData = {
             sessionId: s.id || s.sessionId,
@@ -318,14 +315,12 @@ export default function CallScreen() {
     }
   };
   
-  // Initialize WebRTC when call becomes active
   useEffect(() => {
     if ((callStatus === 'active' || callStatus === 'finding') && session?.sessionId && !pcRef.current) {
       initializeWebRTC();
     }
   }, [callStatus, session?.sessionId]);
   
-  // Poll for partner joining
   useEffect(() => {
     if (callStatus === 'finding' && session?.sessionId) {
       const interval = setInterval(async () => {
@@ -357,7 +352,7 @@ export default function CallScreen() {
             }
           }
         } catch (error) {
-          // Continue polling on error
+          // Continue polling
         }
       }, 1000);
       
@@ -365,7 +360,6 @@ export default function CallScreen() {
     }
   }, [callStatus, session?.sessionId]);
   
-  // Poll for session end
   useEffect(() => {
     if (callStatus === 'active' && session?.sessionId) {
       const interval = setInterval(async () => {
@@ -391,12 +385,10 @@ export default function CallScreen() {
     }
   }, [callStatus, session?.sessionId, partner?.name]);
   
-  // Poll for video upgrade requests and session updates
   useEffect(() => {
     if (callStatus === 'active' && session?.sessionId) {
       const interval = setInterval(async () => {
         try {
-          // Check for video upgrade requests
           if (!isVideoCall) {
             const response = await communicationAPI.checkVideoRequest(session.sessionId);
             if (response.success && response.data?.hasPendingRequest) {
@@ -405,7 +397,6 @@ export default function CallScreen() {
             }
           }
           
-          // Check if session has been upgraded to video
           const sessionsResponse = await communicationAPI.getActiveSessions();
           if (sessionsResponse?.success && sessionsResponse.data?.sessions?.length > 0) {
             const activeSession = sessionsResponse.data.sessions.find((s: any) => 
@@ -413,39 +404,32 @@ export default function CallScreen() {
             );
             
             if (activeSession) {
-              // Check if session type changed to video_call
               if (activeSession.sessionType === 'video_call' && !isVideoCall) {
                 setIsVideoCall(true);
                 setSession(prev => prev ? { ...prev, sessionType: 'video_call' } : null);
                 
-                // Show notification that call was upgraded to video
                 Alert.alert('Video Call', 'The call has been upgraded to video!');
                 
-                // Add video track and renegotiate if we're on web
                 if (Platform.OS === 'web' && pcRef.current) {
                   try {
-                    // Get new stream with video
                     const newStream = await navigator.mediaDevices.getUserMedia({ 
                       audio: true, 
                       video: true 
                     });
                     
-                    // Stop old tracks
                     if (localStreamRef.current) {
                       localStreamRef.current.getTracks().forEach((track: any) => track.stop());
                     }
                     
-                    // Set new stream
                     localStreamRef.current = newStream;
+                    setLocalStream(newStream);
                     
-                    // Show local video preview
                     if (localVideoElRef.current) {
                       localVideoElRef.current.srcObject = newStream;
                       localVideoElRef.current.muted = true;
                       localVideoElRef.current.play().catch(console.error);
                     }
                     
-                    // Update peer connection
                     const senders = (pcRef.current as any).getSenders();
                     senders.forEach((sender: any) => {
                       if (sender.track) {
@@ -464,7 +448,6 @@ export default function CallScreen() {
                     console.error('❌ Failed to add video track after upgrade:', error);
                   }
                 } else if (Platform.OS !== 'web' && pcRef.current) {
-                  // Mobile video upgrade
                   try {
                     const hasCameraPermission = await requestCameraPermission();
                     if (!hasCameraPermission) {
@@ -488,15 +471,13 @@ export default function CallScreen() {
                     
                     const newStream = await mediaDevices.getUserMedia(constraints);
                     
-                    // Stop old tracks
                     if (localStreamRef.current) {
                       localStreamRef.current.getTracks().forEach((track: any) => track.stop());
                     }
                     
-                    // Set new stream
                     localStreamRef.current = newStream;
+                    setLocalStream(newStream);
                     
-                    // Update peer connection
                     const senders = (pcRef.current as any).getSenders();
                     senders.forEach((sender: any) => {
                       if (sender.track) {
@@ -508,7 +489,6 @@ export default function CallScreen() {
                       (pcRef.current as any).addTrack(track, newStream);
                     });
                     
-                    // Add video transceiver if needed
                     const transceivers = (pcRef.current as any).getTransceivers();
                     const hasVideoTransceiver = transceivers.some((t: any) => t.sender && t.sender.track && t.sender.track.kind === 'video');
                     if (!hasVideoTransceiver) {
@@ -540,11 +520,11 @@ export default function CallScreen() {
     }
 
     try {
-      // Determine if we are the initiator (the one who created the session)
-      // If we're waiting for partner, we're the initiator. If we joined, we're not.
+      console.log('📱 Android: Initializing WebRTC...');
+      
       const isInitiator = session.status === 'waiting_for_partner' || !partner;
+      console.log('📱 Android: isInitiator:', isInitiator);
 
-      // Create peer connection with platform-specific configuration
       const configuration = {
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
@@ -553,7 +533,6 @@ export default function CallScreen() {
           { urls: 'stun:stun3.l.google.com:19302' },
           { urls: 'stun:stun4.l.google.com:19302' },
           { urls: 'stun:stun.services.mozilla.com' },
-          // Add TURN servers for when STUN fails
           { 
             urls: 'turn:openrelay.metered.ca:80',
             username: 'openrelayproject',
@@ -574,30 +553,41 @@ export default function CallScreen() {
         iceTransportPolicy: 'all' as RTCIceTransportPolicy
       };
       
-      // Use platform-specific RTCPeerConnection
       const pc = Platform.OS === 'web' 
         ? new (window as any).RTCPeerConnection(configuration)
         : new RTCPeerConnection(configuration);
       pcRef.current = pc;
       
-      // Add transceivers to ensure we can receive media
+      console.log('📱 Android: Peer connection created');
+      
       pc.addTransceiver('audio', { direction: 'sendrecv' });
       if (isVideoCall) {
         pc.addTransceiver('video', { direction: 'sendrecv' });
       }
       
-      // Handle remote stream - platform-specific implementation
+      console.log('📱 Android: Transceivers added');
+      
       (pc as any).ontrack = (event: any) => {
+        console.log('📱 Android: ontrack event received', event.track.kind);
         
-        // Use the stream directly from the event
-        const remoteStream = event.streams[0];
-        remoteStreamRef.current = remoteStream;
+        const stream = event.streams[0];
+        
+        if (!stream) {
+          console.error('❌ No stream in ontrack event');
+          return;
+        }
+        
+        console.log('📱 Android: Remote stream received');
+        console.log('📱 Android: Audio tracks:', stream.getAudioTracks().length);
+        console.log('📱 Android: Video tracks:', stream.getVideoTracks().length);
+        
+        remoteStreamRef.current = stream;
+        setRemoteStream(stream);
         
         if (Platform.OS === 'web') {
-          // Web platform - use HTML audio/video elements
-        if (event.track.kind === 'audio') {
+          if (event.track.kind === 'audio') {
           if (remoteAudioElRef.current) {
-              remoteAudioElRef.current.srcObject = remoteStream;
+              remoteAudioElRef.current.srcObject = stream;
             remoteAudioElRef.current.volume = 1.0;
             remoteAudioElRef.current.muted = false;
               remoteAudioElRef.current.autoplay = true;
@@ -622,7 +612,7 @@ export default function CallScreen() {
         
           if (event.track.kind === 'video') {
             if (remoteVideoElRef.current) {
-              remoteVideoElRef.current.srcObject = remoteStream;
+              remoteVideoElRef.current.srcObject = stream;
               remoteVideoElRef.current.autoplay = true;
               remoteVideoElRef.current.playsInline = true;
               remoteVideoElRef.current.muted = false;
@@ -633,20 +623,28 @@ export default function CallScreen() {
             }
           }
         } else {
-          // Android/iOS platform - streams are handled by RTCView
+          console.log('📱 Android: Setting connected state');
           setIsConnected(true);
           
-          // For mobile, ensure we have the stream for RTCView
+          stream.getAudioTracks().forEach((track: any) => {
+            console.log('📱 Android: Audio track enabled:', track.enabled);
+            track.enabled = true;
+          });
+          
           if (event.track.kind === 'video') {
             setConnectionEstablished(true);
+            stream.getVideoTracks().forEach((track: any) => {
+              console.log('📱 Android: Video track enabled:', track.enabled);
+              track.enabled = true;
+            });
           }
         }
       };
       
-      // Handle ICE candidates
       (pc as any).onicecandidate = async (event: any) => {
         if (event.candidate && session?.sessionId) {
           try {
+            console.log('📱 Android: Sending ICE candidate');
             await communicationAPI.postIce(session.sessionId, {
               candidate: JSON.stringify(event.candidate),
               sdpMid: event.candidate.sdpMid,
@@ -658,8 +656,8 @@ export default function CallScreen() {
         }
       };
       
-      // Handle connection state changes
       (pc as any).onconnectionstatechange = () => {
+        console.log('📱 Android: Connection state:', pc.connectionState);
         if (pc.connectionState === 'connected') {
           setIsConnected(true);
           setConnectionEstablished(true);
@@ -671,14 +669,13 @@ export default function CallScreen() {
         }
       };
       
-      // Add ICE connection state change handler
       (pc as any).oniceconnectionstatechange = () => {
+        console.log('📱 Android: ICE connection state:', pc.iceConnectionState);
         if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
           setIsConnected(true);
           setConnectionEstablished(true);
           clearTimeout(iceTimeout);
           
-          // Ensure audio is playing
           if (remoteAudioElRef.current && remoteAudioElRef.current.paused) {
             remoteAudioElRef.current.play().catch(e => {
               console.error('❌ Failed to start audio after ICE connection:', e);
@@ -692,42 +689,40 @@ export default function CallScreen() {
         }
       };
       
-      // Add timeout for ICE connection
       const iceTimeout = setTimeout(() => {
         if (pc.iceConnectionState === 'checking') {
           console.log('⚠️ ICE still checking after 10s - may need TURN server');
         }
       }, 10000);
       
-      // Get local media first
       await getLocalMedia();
       
-      // Check if we got valid media
       if (!localStreamRef.current) {
         console.error('❌ No local stream obtained');
       }
       
-      // ONLY initiator creates the initial offer
       if (isInitiator) {
         try {
+          console.log('📱 Android: Creating offer as initiator');
           const offer = await pc.createOffer({
             offerToReceiveAudio: true,
             offerToReceiveVideo: isVideoCall
           });
           
           await pc.setLocalDescription(offer);
+          console.log('📱 Android: Local description set');
           
           await communicationAPI.postOffer(session.sessionId, {
             type: offer.type,
             sdp: offer.sdp
           });
+          console.log('📱 Android: Offer sent to server');
         } catch (error) {
           console.error('❌ Failed to create/send offer:', error);
           setError('Failed to create call offer. Please try again.');
         }
       }
       
-      // Start signaling polling
       startSignalingPolling();
       
     } catch (error) {
@@ -757,8 +752,9 @@ export default function CallScreen() {
         return false;
       }
     }
-    return true; // iOS handles permissions automatically
+    return true;
   };
+  // Continuation from Part 1...
 
   const requestMicrophonePermission = async () => {
     if (Platform.OS === 'android') {
@@ -781,14 +777,13 @@ export default function CallScreen() {
         return false;
       }
     }
-    return true; // iOS handles permissions automatically
+    return true;
   };
 
   const getLocalMedia = async () => {
     try {
       let stream;
       
-      // Request permissions first
       if (Platform.OS !== 'web') {
         const hasMicPermission = await requestMicrophonePermission();
         if (!hasMicPermission) {
@@ -804,7 +799,6 @@ export default function CallScreen() {
       }
       
       if (Platform.OS === 'web') {
-        // Web implementation
         const constraints = {
           audio: true,
           video: isVideoCall
@@ -812,14 +806,12 @@ export default function CallScreen() {
         
         stream = await navigator.mediaDevices.getUserMedia(constraints);
         
-        // Show local video preview for web
         if (isVideoCall && localVideoElRef.current) {
           localVideoElRef.current.srcObject = stream;
           localVideoElRef.current.muted = true;
           localVideoElRef.current.play().catch(console.error);
         }
       } else {
-        // React Native implementation - Android optimized
         console.log('📱 Android: Getting local media, isVideoCall:', isVideoCall);
         
         const constraints = {
@@ -844,18 +836,17 @@ export default function CallScreen() {
       }
       
       localStreamRef.current = stream;
+      setLocalStream(stream);
       
-      // Add tracks to peer connection
       if (pcRef.current) {
         stream.getTracks().forEach((track: any) => {
+          console.log('📱 Android: Adding local track to peer connection:', track.kind);
           (pcRef.current as any)!.addTrack(track as any, stream);
         });
         
-        // For video calls on mobile, ensure video transceiver is added
         if (isVideoCall && Platform.OS !== 'web') {
           const videoTracks = stream.getVideoTracks();
           if (videoTracks.length > 0) {
-            // Add video transceiver if not already added
             const transceivers = (pcRef.current as any).getTransceivers();
             const hasVideoTransceiver = transceivers.some((t: any) => t.sender && t.sender.track && t.sender.track.kind === 'video');
             if (!hasVideoTransceiver) {
@@ -889,14 +880,11 @@ export default function CallScreen() {
         const response = await communicationAPI.getSignaling(session.sessionId);
         const signaling = response?.data?.signaling || {};
         
-        // Use cached user ID from ref (set during initialization)
         const currentUserId = currentUserIdRef.current;
         
-        // Handle offer - if we receive an offer and don't have a remote description yet
         if (signaling.offer?.sdp && !pcRef.current.remoteDescription) {
-          // Make sure we're not applying our own offer
           if (currentUserId && signaling.offer.from && signaling.offer.from.toString() === currentUserId.toString()) {
-            // This is our own offer, skip it
+            // Skip our own offer
           } else {
             try {
               await pcRef.current.setRemoteDescription({
@@ -917,11 +905,9 @@ export default function CallScreen() {
           }
         }
         
-        // Handle answer - if we receive an answer and have a local description but no remote
         if (signaling.answer?.sdp && pcRef.current.localDescription && !pcRef.current.remoteDescription) {
-          // Make sure we're not applying our own answer
           if (currentUserId && signaling.answer.from && signaling.answer.from.toString() === currentUserId.toString()) {
-            // This is our own answer, skip it
+            // Skip our own answer
           } else {
             try {
               await pcRef.current.setRemoteDescription({
@@ -934,14 +920,12 @@ export default function CallScreen() {
           }
         }
         
-        // Handle ICE candidates - FILTER OUT OWN CANDIDATES
         if (Array.isArray(signaling.iceCandidates)) {
           for (const candidate of signaling.iceCandidates) {
             if (!candidate?.candidate) {
               continue;
             }
             
-            // Skip our own ICE candidates
             if (currentUserId && candidate.from && candidate.from.toString() === currentUserId.toString()) {
               continue;
             }
@@ -958,7 +942,6 @@ export default function CallScreen() {
               await pcRef.current.addIceCandidate(iceCandidate);
             } catch (error) {
               console.error('❌ Failed to add ICE candidate:', error);
-              // Remove from applied set so we can retry later
               appliedIceSetRef.current.delete(key);
             }
           }
@@ -974,7 +957,6 @@ export default function CallScreen() {
     const newMutedState = !isMuted;
     setIsMuted(newMutedState);
     
-    // Update backend state
     if (session?.sessionId) {
       try {
         await communicationAPI.updateParticipantState(session.sessionId, {
@@ -982,21 +964,18 @@ export default function CallScreen() {
         });
       } catch (error) {
         console.error('Update mic state error:', error);
-        setIsMuted(!newMutedState); // Revert on error
+        setIsMuted(!newMutedState);
       }
     }
     
-    // Toggle local audio track (works on both web and mobile)
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach((track: any) => {
         track.enabled = !newMutedState;
       });
     }
     
-    // Web-specific audio handling
     if (Platform.OS === 'web' && remoteAudioElRef.current) {
       try {
-        // Resume audio context if suspended
         const AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
         if (AudioContext) {
           const audioContext = new AudioContext();
@@ -1005,7 +984,6 @@ export default function CallScreen() {
           }
         }
         
-        // Try to play remote audio
         if (remoteAudioElRef.current.paused) {
           await remoteAudioElRef.current.play();
         }
@@ -1015,8 +993,18 @@ export default function CallScreen() {
     }
   };
   
-  const toggleSpeaker = () => {
-    setIsSpeakerOn(!isSpeakerOn);
+  const toggleSpeaker = async () => {
+    const newSpeakerState = !isSpeakerOn;
+    setIsSpeakerOn(newSpeakerState);
+    
+    if (Platform.OS !== 'web' && mediaDevices) {
+      try {
+        await mediaDevices.setAudioOutput(newSpeakerState ? 'speaker' : 'earpiece');
+        console.log('📱 Android: Audio output set to:', newSpeakerState ? 'speaker' : 'earpiece');
+      } catch (error) {
+        console.error('❌ Failed to toggle speaker:', error);
+      }
+    }
   };
   
   const requestVideoUpgrade = async () => {
@@ -1042,7 +1030,6 @@ export default function CallScreen() {
       const response = await communicationAPI.respondToVideoUpgrade(session.sessionId, accept);
       if (response.success) {
         if (accept) {
-          // Request camera permission for Android before upgrading to video
           if (Platform.OS !== 'web') {
             const hasCameraPermission = await requestCameraPermission();
             if (!hasCameraPermission) {
@@ -1056,33 +1043,28 @@ export default function CallScreen() {
           setIsVideoCall(true);
           setSession(prev => prev ? { ...prev, sessionType: 'video_call' } : null);
           
-          // Get new media with video enabled
           try {
             let newStream;
             
             if (Platform.OS === 'web') {
-              // Web: Get new stream with video
               newStream = await navigator.mediaDevices.getUserMedia({ 
                 audio: true, 
                 video: true 
               });
               
-              // Stop old tracks
               if (localStreamRef.current) {
                 localStreamRef.current.getTracks().forEach((track: any) => track.stop());
               }
               
-              // Set new stream
               localStreamRef.current = newStream;
+              setLocalStream(newStream);
               
-              // Show local video preview
               if (localVideoElRef.current) {
                 localVideoElRef.current.srcObject = newStream;
                 localVideoElRef.current.muted = true;
                 localVideoElRef.current.play().catch(console.error);
               }
             } else {
-              // Mobile: Get new stream with video - Android optimized
               console.log('📱 Android: Upgrading to video call...');
               const constraints = {
                 audio: {
@@ -1103,18 +1085,15 @@ export default function CallScreen() {
               console.log('📱 Android: Video upgrade stream obtained:', newStream);
               console.log('📱 Android: Video tracks after upgrade:', newStream.getVideoTracks().length);
               
-              // Stop old tracks
               if (localStreamRef.current) {
                 localStreamRef.current.getTracks().forEach((track: any) => track.stop());
               }
               
-              // Set new stream
               localStreamRef.current = newStream;
+              setLocalStream(newStream);
             }
             
-            // Update peer connection with new tracks
             if (pcRef.current && newStream) {
-              // Remove old tracks
               const senders = (pcRef.current as any).getSenders();
               senders.forEach((sender: any) => {
                 if (sender.track) {
@@ -1122,12 +1101,10 @@ export default function CallScreen() {
                 }
               });
               
-              // Add new tracks
               newStream.getTracks().forEach((track: any) => {
                 (pcRef.current as any).addTrack(track, newStream);
               });
               
-              // Add video transceiver if needed
               if (Platform.OS !== 'web') {
                 const transceivers = (pcRef.current as any).getTransceivers();
                 const hasVideoTransceiver = transceivers.some((t: any) => t.sender && t.sender.track && t.sender.track.kind === 'video');
@@ -1136,7 +1113,6 @@ export default function CallScreen() {
                 }
               }
               
-              // Force renegotiation
               const offer = await pcRef.current.createOffer();
               await pcRef.current.setLocalDescription(offer);
               await communicationAPI.postOffer(session.sessionId, { type: offer.type, sdp: offer.sdp });
@@ -1183,11 +1159,9 @@ export default function CallScreen() {
     cancelingRef.current = true;
     
     try {
-      // If we already have a server session, explicitly leave it
       if (session?.sessionId) {
         try { await communicationAPI.leaveSession(session.sessionId); } catch {}
       }
-      // Strict cancel flows for any waiting/active sessions associated with user
       await communicationAPI.cancelAllSessions();
       await communicationAPI.purgeAllSessionsHard();
     } catch (error) {
@@ -1220,7 +1194,6 @@ export default function CallScreen() {
     }
   };
   
-  // Show error state
   if (error) {
   return (
     <View style={styles.container}>
@@ -1247,7 +1220,6 @@ export default function CallScreen() {
     );
   }
   
-  // Show loading state
   if (callStatus === 'finding' || callStatus === 'connecting') {
     return (
       <View style={styles.container}>
@@ -1277,7 +1249,6 @@ export default function CallScreen() {
   
   const handleUserInteraction = async () => {
     if (Platform.OS === 'web') {
-      // Web-specific audio context handling
       try {
         const AudioContext = (window as any).AudioContext || (window as any).webkitAudioContext;
         if (AudioContext) {
@@ -1287,7 +1258,6 @@ export default function CallScreen() {
           }
         }
         
-        // Try to play remote audio
         if (remoteAudioElRef.current && remoteAudioElRef.current.paused) {
           await remoteAudioElRef.current.play();
         }
@@ -1317,9 +1287,7 @@ export default function CallScreen() {
         navigation={navigation}
       >
       {isVideoCall ? (
-        // Video call view
         <View style={styles.videoContainer}>
-          {/* Main video (remote person) */}
           <View style={styles.mainVideo}>
             {Platform.OS === 'web' ? (
               <video 
@@ -1330,21 +1298,19 @@ export default function CallScreen() {
                 muted={false}
               />
             ) : (
-              RTCView && remoteStreamRef.current ? (
+              RTCView && remoteStream ? (
                 <RTCView
-                  streamURL={remoteStreamRef.current.toURL()}
+                  streamURL={remoteStream.toURL()}
                   style={styles.remoteVideo}
                   mirror={false}
                   objectFit="cover"
-                  onLoadStart={() => console.log('📱 Android: Remote video loading started')}
-                  onLoad={() => console.log('📱 Android: Remote video loaded successfully')}
-                  onError={(error: any) => console.error('📱 Android: Remote video error:', error)}
+                  zOrder={0}
                 />
               ) : (
                 <View style={styles.videoPlaceholderContainer}>
                   <FontAwesome name="user" size={100} color="#FFFFFF" style={styles.videoPlaceholder} />
                   <ThemedText style={styles.videoPlaceholderText}>
-                    {remoteStreamRef.current ? 'Video Loading...' : 'No Video'}
+                    {isConnected ? 'Waiting for video...' : 'Connecting...'}
                   </ThemedText>
                 </View>
               )
@@ -1357,7 +1323,6 @@ export default function CallScreen() {
             )}
           </View>
           
-          {/* Self video (small overlay) */}
           <View style={styles.selfVideoContainer}>
             <View style={styles.selfVideo}>
               {Platform.OS === 'web' ? (
@@ -1369,15 +1334,13 @@ export default function CallScreen() {
                   autoPlay
                 />
               ) : (
-                RTCView && localStreamRef.current ? (
+                RTCView && localStream ? (
                   <RTCView
-                    streamURL={localStreamRef.current.toURL()}
+                    streamURL={localStream.toURL()}
                     style={styles.localVideo}
                     mirror={true}
                     objectFit="cover"
-                    onLoadStart={() => console.log('📱 Android: Local video loading started')}
-                    onLoad={() => console.log('📱 Android: Local video loaded successfully')}
-                    onError={(error: any) => console.error('📱 Android: Local video error:', error)}
+                    zOrder={1}
                   />
                 ) : (
                   <FontAwesome name="user" size={40} color="#FFFFFF" />
@@ -1386,14 +1349,12 @@ export default function CallScreen() {
             </View>
           </View>
           
-          {/* Call info overlay */}
           <BlurView intensity={30} style={styles.videoCallInfoBar}>
             <ThemedText style={styles.videoCallName}>{partner?.name || 'Partner'}</ThemedText>
             <ThemedText style={styles.videoCallDuration}>{formatDuration(callDuration)}</ThemedText>
           </BlurView>
         </View>
       ) : (
-        // Audio call view
         <View style={styles.profileContainer}>
           <View style={styles.profileImageContainer}>
             <View style={styles.profileImage}>
@@ -1414,10 +1375,8 @@ export default function CallScreen() {
         </View>
       )}
       
-      {/* Web-only hidden audio/video elements */}
       {Platform.OS === 'web' && (
         <>
-          {/* Hidden audio element for all calls */}
           <audio 
             ref={remoteAudioElRef as any} 
             autoPlay 
@@ -1434,7 +1393,6 @@ export default function CallScreen() {
             }} 
           />
       
-      {/* Hidden video element for video calls */}
           {isVideoCall && (
             <video 
               ref={remoteVideoElRef as any} 
@@ -1456,7 +1414,6 @@ export default function CallScreen() {
         </>
       )}
       
-      {/* Call Controls */}
       <View style={styles.controlsContainer}>
         <TouchableOpacity 
           style={[styles.controlButton, isMuted && styles.activeControlButton]}
@@ -1483,7 +1440,6 @@ export default function CallScreen() {
         </TouchableOpacity>
       </View>
       
-      {/* Additional Controls */}
       <View style={styles.additionalControlsContainer}>
         {!isVideoCall && (
           <TouchableOpacity 
@@ -1496,7 +1452,6 @@ export default function CallScreen() {
         )}
       </View>
       
-      {/* Call Quality Indicator */}
       <View style={styles.qualityIndicator}>
         <FontAwesome 
           name="signal" 
@@ -1508,14 +1463,12 @@ export default function CallScreen() {
         </ThemedText>
       </View>
       
-      {/* Permission Error */}
       {permissionError && (
         <View style={styles.permissionError}>
           <ThemedText style={styles.permissionErrorText}>{permissionError}</ThemedText>
         </View>
       )}
       
-      {/* Video Request Modal */}
       <Modal visible={showVideoRequest} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContainer}>
@@ -1542,7 +1495,6 @@ export default function CallScreen() {
         </View>
       </Modal>
       
-      {/* Session Ended Modal */}
       <Modal visible={showEndModal} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContainer, { backgroundColor: '#ffffff' }] }>
@@ -1921,7 +1873,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginHorizontal: 5,
     alignItems: 'center',
-    
   },
   acceptButton: {
     backgroundColor: '#4CAF50',
@@ -1937,4 +1888,4 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
   },
-}); 
+});
