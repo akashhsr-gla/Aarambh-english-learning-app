@@ -118,7 +118,24 @@ const gameSchema = new mongoose.Schema({
     },
     storyContext: {
       type: String // For storytelling games
-    }
+    },
+    
+    // Storytelling-specific fields
+    storyBeginning: {
+      type: String // Story prompt beginning
+    },
+    keywords: [{
+      type: String // Suggested keywords for the story
+    }],
+    minWords: {
+      type: Number // Minimum word count required
+    },
+    wordLimit: {
+      type: Number // Maximum word count (alternative to minWords)
+    },
+    suggestedWords: [{
+      type: String // Alternative to keywords
+    }]
   }],
   
   // Game Settings
