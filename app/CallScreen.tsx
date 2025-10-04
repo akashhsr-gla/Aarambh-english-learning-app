@@ -424,29 +424,102 @@ export default function CallScreen() {
                 // Add video track and renegotiate if we're on web
                 if (Platform.OS === 'web' && pcRef.current) {
                   try {
-                    // Get video stream
-                    const videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-                    const videoTrack = videoStream.getVideoTracks()[0];
+                    // Get new stream with video
+                    const newStream = await navigator.mediaDevices.getUserMedia({ 
+                      audio: true, 
+                      video: true 
+                    });
                     
-                    if (videoTrack && localStreamRef.current) {
-                      // Add video track to existing stream and peer connection
-                      (localStreamRef.current as any).addTrack(videoTrack as any);
-                      (pcRef.current as any).addTrack(videoTrack as any, localStreamRef.current);
-                      
-                      // Show local video preview
-                      if (localVideoElRef.current) {
-                        localVideoElRef.current.srcObject = localStreamRef.current;
-                        localVideoElRef.current.muted = true;
-                        localVideoElRef.current.play().catch(console.error);
-                      }
-
-                     
-                      const offer = await pcRef.current.createOffer();
-                      await pcRef.current.setLocalDescription(offer);
-                      await communicationAPI.postOffer(session.sessionId, { type: offer.type, sdp: offer.sdp });
+                    // Stop old tracks
+                    if (localStreamRef.current) {
+                      localStreamRef.current.getTracks().forEach((track: any) => track.stop());
                     }
+                    
+                    // Set new stream
+                    localStreamRef.current = newStream;
+                    
+                    // Show local video preview
+                    if (localVideoElRef.current) {
+                      localVideoElRef.current.srcObject = newStream;
+                      localVideoElRef.current.muted = true;
+                      localVideoElRef.current.play().catch(console.error);
+                    }
+                    
+                    // Update peer connection
+                    const senders = (pcRef.current as any).getSenders();
+                    senders.forEach((sender: any) => {
+                      if (sender.track) {
+                        (pcRef.current as any).removeTrack(sender);
+                      }
+                    });
+                    
+                    newStream.getTracks().forEach((track: any) => {
+                      (pcRef.current as any).addTrack(track, newStream);
+                    });
+                    
+                    const offer = await pcRef.current.createOffer();
+                    await pcRef.current.setLocalDescription(offer);
+                    await communicationAPI.postOffer(session.sessionId, { type: offer.type, sdp: offer.sdp });
                   } catch (error) {
                     console.error('❌ Failed to add video track after upgrade:', error);
+                  }
+                } else if (Platform.OS !== 'web' && pcRef.current) {
+                  // Mobile video upgrade
+                  try {
+                    const hasCameraPermission = await requestCameraPermission();
+                    if (!hasCameraPermission) {
+                      console.error('❌ Camera permission denied for video upgrade');
+                      return;
+                    }
+                    
+                    const constraints = {
+                      audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                        autoGainControl: true,
+                      },
+                      video: {
+                        width: { min: 320, ideal: 640, max: 1280 },
+                        height: { min: 240, ideal: 480, max: 720 },
+                        frameRate: { min: 15, ideal: 24, max: 30 },
+                        facingMode: 'user'
+                      }
+                    };
+                    
+                    const newStream = await mediaDevices.getUserMedia(constraints);
+                    
+                    // Stop old tracks
+                    if (localStreamRef.current) {
+                      localStreamRef.current.getTracks().forEach((track: any) => track.stop());
+                    }
+                    
+                    // Set new stream
+                    localStreamRef.current = newStream;
+                    
+                    // Update peer connection
+                    const senders = (pcRef.current as any).getSenders();
+                    senders.forEach((sender: any) => {
+                      if (sender.track) {
+                        (pcRef.current as any).removeTrack(sender);
+                      }
+                    });
+                    
+                    newStream.getTracks().forEach((track: any) => {
+                      (pcRef.current as any).addTrack(track, newStream);
+                    });
+                    
+                    // Add video transceiver if needed
+                    const transceivers = (pcRef.current as any).getTransceivers();
+                    const hasVideoTransceiver = transceivers.some((t: any) => t.sender && t.sender.track && t.sender.track.kind === 'video');
+                    if (!hasVideoTransceiver) {
+                      (pcRef.current as any).addTransceiver('video', { direction: 'sendrecv' });
+                    }
+                    
+                    const offer = await pcRef.current.createOffer();
+                    await pcRef.current.setLocalDescription(offer);
+                    await communicationAPI.postOffer(session.sessionId, { type: offer.type, sdp: offer.sdp });
+                  } catch (error) {
+                    console.error('❌ Failed to add video track on mobile after upgrade:', error);
                   }
                 }
               }
@@ -666,6 +739,7 @@ export default function CallScreen() {
   const requestCameraPermission = async () => {
     if (Platform.OS === 'android') {
       try {
+        console.log('📱 Android: Requesting camera permission...');
         const granted = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.CAMERA,
           {
@@ -676,9 +750,34 @@ export default function CallScreen() {
             buttonPositive: 'OK',
           }
         );
+        console.log('📱 Android: Camera permission result:', granted);
         return granted === PermissionsAndroid.RESULTS.GRANTED;
       } catch (err) {
-        console.warn('Camera permission error:', err);
+        console.warn('📱 Android: Camera permission error:', err);
+        return false;
+      }
+    }
+    return true; // iOS handles permissions automatically
+  };
+
+  const requestMicrophonePermission = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        console.log('📱 Android: Requesting microphone permission...');
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.RECORD_AUDIO,
+          {
+            title: 'Microphone Permission',
+            message: 'This app needs access to your microphone to make calls.',
+            buttonNeutral: 'Ask Me Later',
+            buttonNegative: 'Cancel',
+            buttonPositive: 'OK',
+          }
+        );
+        console.log('📱 Android: Microphone permission result:', granted);
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      } catch (err) {
+        console.warn('📱 Android: Microphone permission error:', err);
         return false;
       }
     }
@@ -688,6 +787,21 @@ export default function CallScreen() {
   const getLocalMedia = async () => {
     try {
       let stream;
+      
+      // Request permissions first
+      if (Platform.OS !== 'web') {
+        const hasMicPermission = await requestMicrophonePermission();
+        if (!hasMicPermission) {
+          throw new Error('Microphone permission denied');
+        }
+        
+        if (isVideoCall) {
+          const hasCameraPermission = await requestCameraPermission();
+          if (!hasCameraPermission) {
+            throw new Error('Camera permission denied');
+          }
+        }
+      }
       
       if (Platform.OS === 'web') {
         // Web implementation
@@ -705,25 +819,28 @@ export default function CallScreen() {
           localVideoElRef.current.play().catch(console.error);
         }
       } else {
-        // React Native implementation
-        // Request camera permission for video calls
-        if (isVideoCall) {
-          const hasCameraPermission = await requestCameraPermission();
-          if (!hasCameraPermission) {
-            throw new Error('Camera permission denied');
-          }
-        }
+        // React Native implementation - Android optimized
+        console.log('📱 Android: Getting local media, isVideoCall:', isVideoCall);
         
         const constraints = {
-          audio: true,
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
           video: isVideoCall ? {
-            width: { min: 640, ideal: 1280, max: 1920 },
-            height: { min: 480, ideal: 720, max: 1080 },
-            frameRate: { min: 15, ideal: 30, max: 30 }
+            width: { min: 320, ideal: 640, max: 1280 },
+            height: { min: 240, ideal: 480, max: 720 },
+            frameRate: { min: 15, ideal: 24, max: 30 },
+            facingMode: 'user'
           } : false
         };
         
+        console.log('📱 Android: Media constraints:', JSON.stringify(constraints, null, 2));
         stream = await mediaDevices.getUserMedia(constraints);
+        console.log('📱 Android: Got media stream:', stream);
+        console.log('📱 Android: Audio tracks:', stream.getAudioTracks().length);
+        console.log('📱 Android: Video tracks:', stream.getVideoTracks().length);
       }
       
       localStreamRef.current = stream;
@@ -752,6 +869,8 @@ export default function CallScreen() {
       console.error('Failed to get local media:', error);
       if (error.message === 'Camera permission denied') {
         setPermissionError('Camera permission is required for video calls. Please enable camera access in your device settings.');
+      } else if (error.message === 'Microphone permission denied') {
+        setPermissionError('Microphone permission is required for calls. Please enable microphone access in your device settings.');
       } else {
         setPermissionError('Please allow microphone' + (isVideoCall ? ' and camera' : '') + ' access to join the call.');
       }
@@ -937,59 +1056,94 @@ export default function CallScreen() {
           setIsVideoCall(true);
           setSession(prev => prev ? { ...prev, sessionType: 'video_call' } : null);
           
-          // Add video track to existing stream
-          if (Platform.OS === 'web' && localStreamRef.current && pcRef.current) {
-            try {
-              const videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-              const videoTrack = videoStream.getVideoTracks()[0];
+          // Get new media with video enabled
+          try {
+            let newStream;
+            
+            if (Platform.OS === 'web') {
+              // Web: Get new stream with video
+              newStream = await navigator.mediaDevices.getUserMedia({ 
+                audio: true, 
+                video: true 
+              });
               
-              if (videoTrack) {
-                (localStreamRef.current as any).addTrack(videoTrack as any);
-                (pcRef.current as any).addTrack(videoTrack as any, localStreamRef.current);
-                
-                // Show local video preview
-                if (localVideoElRef.current) {
-                  localVideoElRef.current.srcObject = localStreamRef.current;
-                  localVideoElRef.current.muted = true;
-                  localVideoElRef.current.play().catch(console.error);
-                }
-                
-                // Force renegotiation so remote receives the new video track
-                const offer = await pcRef.current.createOffer();
-                await pcRef.current.setLocalDescription(offer);
-                await communicationAPI.postOffer(session.sessionId, { type: offer.type, sdp: offer.sdp });
+              // Stop old tracks
+              if (localStreamRef.current) {
+                localStreamRef.current.getTracks().forEach((track: any) => track.stop());
               }
-            } catch (error) {
-              console.error('❌ Failed to add video track:', error);
-            }
-          } else if (Platform.OS !== 'web' && localStreamRef.current && pcRef.current) {
-            // Android/iOS video upgrade
-            try {
+              
+              // Set new stream
+              localStreamRef.current = newStream;
+              
+              // Show local video preview
+              if (localVideoElRef.current) {
+                localVideoElRef.current.srcObject = newStream;
+                localVideoElRef.current.muted = true;
+                localVideoElRef.current.play().catch(console.error);
+              }
+            } else {
+              // Mobile: Get new stream with video - Android optimized
+              console.log('📱 Android: Upgrading to video call...');
               const constraints = {
-                audio: false,
+                audio: {
+                  echoCancellation: true,
+                  noiseSuppression: true,
+                  autoGainControl: true,
+                },
                 video: {
-                  width: { min: 640, ideal: 1280, max: 1920 },
-                  height: { min: 480, ideal: 720, max: 1080 },
-                  frameRate: { min: 15, ideal: 30, max: 30 }
+                  width: { min: 320, ideal: 640, max: 1280 },
+                  height: { min: 240, ideal: 480, max: 720 },
+                  frameRate: { min: 15, ideal: 24, max: 30 },
+                  facingMode: 'user'
                 }
               };
               
-              const videoStream = await mediaDevices.getUserMedia(constraints);
-              const videoTrack = videoStream.getVideoTracks()[0];
+              console.log('📱 Android: Video upgrade constraints:', JSON.stringify(constraints, null, 2));
+              newStream = await mediaDevices.getUserMedia(constraints);
+              console.log('📱 Android: Video upgrade stream obtained:', newStream);
+              console.log('📱 Android: Video tracks after upgrade:', newStream.getVideoTracks().length);
               
-              if (videoTrack) {
-                // Add video track to existing stream
-                (localStreamRef.current as any).addTrack(videoTrack as any);
-                (pcRef.current as any).addTrack(videoTrack as any, localStreamRef.current);
-                
-                // Force renegotiation so remote receives the new video track
-                const offer = await pcRef.current.createOffer();
-                await pcRef.current.setLocalDescription(offer);
-                await communicationAPI.postOffer(session.sessionId, { type: offer.type, sdp: offer.sdp });
+              // Stop old tracks
+              if (localStreamRef.current) {
+                localStreamRef.current.getTracks().forEach((track: any) => track.stop());
               }
-            } catch (error) {
-              console.error('❌ Failed to add video track on mobile:', error);
+              
+              // Set new stream
+              localStreamRef.current = newStream;
             }
+            
+            // Update peer connection with new tracks
+            if (pcRef.current && newStream) {
+              // Remove old tracks
+              const senders = (pcRef.current as any).getSenders();
+              senders.forEach((sender: any) => {
+                if (sender.track) {
+                  (pcRef.current as any).removeTrack(sender);
+                }
+              });
+              
+              // Add new tracks
+              newStream.getTracks().forEach((track: any) => {
+                (pcRef.current as any).addTrack(track, newStream);
+              });
+              
+              // Add video transceiver if needed
+              if (Platform.OS !== 'web') {
+                const transceivers = (pcRef.current as any).getTransceivers();
+                const hasVideoTransceiver = transceivers.some((t: any) => t.sender && t.sender.track && t.sender.track.kind === 'video');
+                if (!hasVideoTransceiver) {
+                  (pcRef.current as any).addTransceiver('video', { direction: 'sendrecv' });
+                }
+              }
+              
+              // Force renegotiation
+              const offer = await pcRef.current.createOffer();
+              await pcRef.current.setLocalDescription(offer);
+              await communicationAPI.postOffer(session.sessionId, { type: offer.type, sdp: offer.sdp });
+            }
+          } catch (error) {
+            console.error('❌ Failed to upgrade to video:', error);
+            Alert.alert('Video Upgrade Failed', 'Could not enable video. Please try again.');
           }
         }
       }
@@ -1176,17 +1330,22 @@ export default function CallScreen() {
                 muted={false}
               />
             ) : (
-              RTCView ? (
+              RTCView && remoteStreamRef.current ? (
                 <RTCView
-                  streamURL={remoteStreamRef.current?.toURL() || ''}
+                  streamURL={remoteStreamRef.current.toURL()}
                   style={styles.remoteVideo}
                   mirror={false}
                   objectFit="cover"
+                  onLoadStart={() => console.log('📱 Android: Remote video loading started')}
+                  onLoad={() => console.log('📱 Android: Remote video loaded successfully')}
+                  onError={(error: any) => console.error('📱 Android: Remote video error:', error)}
                 />
               ) : (
                 <View style={styles.videoPlaceholderContainer}>
                   <FontAwesome name="user" size={100} color="#FFFFFF" style={styles.videoPlaceholder} />
-                  <ThemedText style={styles.videoPlaceholderText}>No Video</ThemedText>
+                  <ThemedText style={styles.videoPlaceholderText}>
+                    {remoteStreamRef.current ? 'Video Loading...' : 'No Video'}
+                  </ThemedText>
                 </View>
               )
             )}
@@ -1210,12 +1369,15 @@ export default function CallScreen() {
                   autoPlay
                 />
               ) : (
-                RTCView ? (
+                RTCView && localStreamRef.current ? (
                   <RTCView
-                    streamURL={localStreamRef.current?.toURL() || ''}
+                    streamURL={localStreamRef.current.toURL()}
                     style={styles.localVideo}
                     mirror={true}
                     objectFit="cover"
+                    onLoadStart={() => console.log('📱 Android: Local video loading started')}
+                    onLoad={() => console.log('📱 Android: Local video loaded successfully')}
+                    onError={(error: any) => console.error('📱 Android: Local video error:', error)}
                   />
                 ) : (
                   <FontAwesome name="user" size={40} color="#FFFFFF" />

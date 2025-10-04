@@ -4,11 +4,13 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Dimensions, FlatList, Linking, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Dimensions, FlatList, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import Header from '../components/Header';
 import { ThemedText } from '../components/ThemedText';
 import { ThemedView } from '../components/ThemedView';
+import PDFViewer from './components/PDFViewer';
+import VideoPlayer from './components/VideoPlayer';
 import { lecturesAPI } from './services/api';
 
 // Define lecture type from backend
@@ -274,16 +276,24 @@ export default function LearnScreen() {
               </TouchableOpacity>
             </View>
             
-            <View style={styles.videoPreview}>
-              <Image
-                source={{ uri: activeLecture.thumbnailUrl || 'https://via.placeholder.com/300x180?text=No+Image' }}
-                style={styles.videoThumbnail}
-                contentFit="cover"
-              />
-              <View style={styles.playButtonOverlay}>
-                <FontAwesome name="play" size={30} color="#FFFFFF" />
-              </View>
-            </View>
+            <VideoPlayer
+              videoUrl={activeLecture.videoUrl}
+              thumbnailUrl={activeLecture.thumbnailUrl}
+              onComplete={() => {
+                console.log('Video completed');
+                // Mark as completed if not already
+                if (!completedLectures.has(activeLecture._id)) {
+                  setCompletedLectures(prev => new Set([...prev, activeLecture._id]));
+                }
+              }}
+              onError={(error: string) => {
+                console.error('Video playback error:', error);
+                Alert.alert('Video Error', 'Failed to play video. Please check your internet connection.');
+              }}
+              style={styles.videoPlayer}
+              showControls={true}
+              autoPlay={false}
+            />
             
             <ThemedText style={styles.activeLessonTitle}>
               {activeLecture.title}
@@ -292,25 +302,32 @@ export default function LearnScreen() {
               {activeLecture.description}
             </ThemedText>
             {activeLecture.notes && (
-              <ThemedView style={styles.notesContainer}>
+              <View style={styles.notesContainer}>
                 <View style={styles.notesHeader}>
                   <FontAwesome name="sticky-note" size={16} color="#226cae" />
-                  <ThemedText style={styles.notesTitle}>Notes</ThemedText>
+                  <ThemedText style={styles.notesTitle}>Lecture Notes</ThemedText>
                 </View>
+                
+                {/* Text Content */}
                 {activeLecture.notes.textContent && (
-                  <ThemedText style={styles.notesText}>{activeLecture.notes.textContent}</ThemedText>
+                  <ThemedView style={styles.textNotesContainer}>
+                    <ThemedText style={styles.notesText}>{activeLecture.notes.textContent}</ThemedText>
+                  </ThemedView>
                 )}
+                
+                {/* PDF Notes */}
                 {activeLecture.notes.pdfUrl && (
-                  <TouchableOpacity 
-                    style={styles.notesLinkButton}
-                    onPress={() => Linking.openURL(activeLecture.notes!.pdfUrl!)}
-                    activeOpacity={0.8}
-                  >
-                    <FontAwesome name="file-pdf-o" size={16} color="#FFFFFF" />
-                    <ThemedText style={styles.notesLinkText}>Open Notes PDF</ThemedText>
-                  </TouchableOpacity>
+                  <PDFViewer
+                    pdfUrl={activeLecture.notes.pdfUrl}
+                    title={`Notes for ${activeLecture.title}`}
+                    style={styles.pdfViewer}
+                    onError={(error: string) => {
+                      console.error('PDF error:', error);
+                      Alert.alert('PDF Error', 'Failed to open PDF notes. Please try again.');
+                    }}
+                  />
                 )}
-              </ThemedView>
+              </View>
             )}
             
             <View style={styles.videoControls}>
@@ -591,26 +608,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  videoPreview: {
-    height: 200,
+  videoPlayer: {
+    marginBottom: 15,
     borderRadius: 10,
     overflow: 'hidden',
-    marginBottom: 15,
-    position: 'relative',
-  },
-  videoThumbnail: {
-    width: '100%',
-    height: '100%',
-  },
-  playButtonOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   videoControls: {
     flexDirection: 'row',
@@ -721,43 +722,33 @@ const styles = StyleSheet.create({
     color: '#666666',
   },
   notesContainer: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 10,
-    padding: 12,
     marginTop: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(34, 108, 174, 0.2)',
   },
   notesHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 6,
+    marginBottom: 12,
   },
   notesTitle: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '700',
     color: '#226cae',
+  },
+  textNotesContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 108, 174, 0.2)',
   },
   notesText: {
     fontSize: 14,
     color: '#333333',
     lineHeight: 20,
   },
-  notesLinkButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#226cae',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    marginTop: 10,
-    gap: 8,
-  },
-  notesLinkText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
+  pdfViewer: {
+    marginTop: 0,
   },
 }); 

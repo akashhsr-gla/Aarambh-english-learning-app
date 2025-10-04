@@ -22,8 +22,13 @@
       "usesCleartextTraffic": true,
       "permissions": [
         "RECORD_AUDIO",
-        "CAMERA"
-      ]
+        "CAMERA",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "WAKE_LOCK"
+      ],
+      "allowBackup": false,
+      "hardwareAccelerated": true
     },
     "web": {
       "bundler": "metro",

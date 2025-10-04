@@ -7,6 +7,7 @@ import {
   Gamepad2,
   LogOut,
   Menu,
+  Play,
   Settings,
   Shield,
   Users,
@@ -79,6 +80,12 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
       href: '/admin/users',
       icon: Users,
       current: pathname.startsWith('/admin/users')
+    },
+    {
+      name: 'Lecture Management',
+      href: '/admin/lectures',
+      icon: Play,
+      current: pathname.startsWith('/admin/lectures')
     },
     {
       name: 'Subscription Management',

@@ -4,6 +4,7 @@ const { body, validationResult } = require('express-validator');
 const VideoLecture = require('../models/VideoLecture');
 const User = require('../models/User');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { convertGoogleDriveUrl, validateGoogleDriveUrl } = require('../utils/googleDriveHelper');
 
 // Validation middleware
 const validateLecture = [
@@ -76,13 +77,54 @@ router.post('/', authenticateToken, requireAdmin, validateLecture, async (req, r
       });
     }
 
+    // Convert Google Drive URLs to direct playable URLs
+    let convertedVideoUrl = videoUrl;
+    let convertedThumbnailUrl = thumbnailUrl;
+    let convertedNotes = notes;
+
+    // Convert video URL
+    if (videoUrl) {
+      const videoValidation = validateGoogleDriveUrl(videoUrl);
+      if (videoValidation.isValid) {
+        convertedVideoUrl = convertGoogleDriveUrl(videoUrl, 'video');
+        console.log(`✅ Converted video URL: ${videoUrl} -> ${convertedVideoUrl}`);
+      } else if (videoValidation.isGoogleDrive) {
+        console.warn(`⚠️ Invalid Google Drive video URL: ${videoValidation.error}`);
+      }
+    }
+
+    // Convert thumbnail URL
+    if (thumbnailUrl) {
+      const thumbnailValidation = validateGoogleDriveUrl(thumbnailUrl);
+      if (thumbnailValidation.isValid) {
+        convertedThumbnailUrl = convertGoogleDriveUrl(thumbnailUrl, 'thumbnail');
+        console.log(`✅ Converted thumbnail URL: ${thumbnailUrl} -> ${convertedThumbnailUrl}`);
+      } else if (thumbnailValidation.isGoogleDrive) {
+        console.warn(`⚠️ Invalid Google Drive thumbnail URL: ${thumbnailValidation.error}`);
+      }
+    }
+
+    // Convert notes PDF URL
+    if (notes && notes.pdfUrl) {
+      const pdfValidation = validateGoogleDriveUrl(notes.pdfUrl);
+      if (pdfValidation.isValid) {
+        convertedNotes = {
+          ...notes,
+          pdfUrl: convertGoogleDriveUrl(notes.pdfUrl, 'pdf')
+        };
+        console.log(`✅ Converted PDF URL: ${notes.pdfUrl} -> ${convertedNotes.pdfUrl}`);
+      } else if (pdfValidation.isGoogleDrive) {
+        console.warn(`⚠️ Invalid Google Drive PDF URL: ${pdfValidation.error}`);
+      }
+    }
+
     const lecture = new VideoLecture({
       title,
       description,
-      videoUrl,
-      thumbnailUrl,
+      videoUrl: convertedVideoUrl,
+      thumbnailUrl: convertedThumbnailUrl,
       duration,
-      notes,
+      notes: convertedNotes,
       instructor,
       region,
       isPremium,
@@ -326,13 +368,54 @@ router.put('/:id', authenticateToken, requireAdmin, validateLectureUpdate, async
       }
     }
 
+    // Convert Google Drive URLs to direct playable URLs
+    let convertedVideoUrl = videoUrl;
+    let convertedThumbnailUrl = thumbnailUrl;
+    let convertedNotes = notes;
+
+    // Convert video URL if provided
+    if (videoUrl !== undefined && videoUrl) {
+      const videoValidation = validateGoogleDriveUrl(videoUrl);
+      if (videoValidation.isValid) {
+        convertedVideoUrl = convertGoogleDriveUrl(videoUrl, 'video');
+        console.log(`✅ Converted video URL: ${videoUrl} -> ${convertedVideoUrl}`);
+      } else if (videoValidation.isGoogleDrive) {
+        console.warn(`⚠️ Invalid Google Drive video URL: ${videoValidation.error}`);
+      }
+    }
+
+    // Convert thumbnail URL if provided
+    if (thumbnailUrl !== undefined && thumbnailUrl) {
+      const thumbnailValidation = validateGoogleDriveUrl(thumbnailUrl);
+      if (thumbnailValidation.isValid) {
+        convertedThumbnailUrl = convertGoogleDriveUrl(thumbnailUrl, 'thumbnail');
+        console.log(`✅ Converted thumbnail URL: ${thumbnailUrl} -> ${convertedThumbnailUrl}`);
+      } else if (thumbnailValidation.isGoogleDrive) {
+        console.warn(`⚠️ Invalid Google Drive thumbnail URL: ${thumbnailValidation.error}`);
+      }
+    }
+
+    // Convert notes PDF URL if provided
+    if (notes !== undefined && notes && notes.pdfUrl) {
+      const pdfValidation = validateGoogleDriveUrl(notes.pdfUrl);
+      if (pdfValidation.isValid) {
+        convertedNotes = {
+          ...notes,
+          pdfUrl: convertGoogleDriveUrl(notes.pdfUrl, 'pdf')
+        };
+        console.log(`✅ Converted PDF URL: ${notes.pdfUrl} -> ${convertedNotes.pdfUrl}`);
+      } else if (pdfValidation.isGoogleDrive) {
+        console.warn(`⚠️ Invalid Google Drive PDF URL: ${pdfValidation.error}`);
+      }
+    }
+
     // Update fields
     if (title !== undefined) lecture.title = title;
     if (description !== undefined) lecture.description = description;
-    if (videoUrl !== undefined) lecture.videoUrl = videoUrl;
-    if (thumbnailUrl !== undefined) lecture.thumbnailUrl = thumbnailUrl;
+    if (videoUrl !== undefined) lecture.videoUrl = convertedVideoUrl;
+    if (thumbnailUrl !== undefined) lecture.thumbnailUrl = convertedThumbnailUrl;
     if (duration !== undefined) lecture.duration = duration;
-    if (notes !== undefined) lecture.notes = notes;
+    if (notes !== undefined) lecture.notes = convertedNotes;
     if (instructor !== undefined) lecture.instructor = instructor;
     if (region !== undefined) lecture.region = region;
     if (isPremium !== undefined) lecture.isPremium = isPremium;
