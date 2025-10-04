@@ -41,3 +41,6 @@ app-example
 # Backend env
 BackEnd/.env
 BackEnd/env.local
+
+# EAS Build configuration
+eas.json
