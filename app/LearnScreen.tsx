@@ -156,10 +156,7 @@ export default function LearnScreen() {
           <View style={styles.difficultyBadge}>
             <ThemedText style={styles.difficultyText}>{item.difficulty}</ThemedText>
           </View>
-          <View style={styles.viewsContainer}>
-            <FontAwesome name="eye" size={12} color="#666666" />
-            <ThemedText style={styles.viewsText}>{item.totalViews} views</ThemedText>
-          </View>
+          
         </View>
       </View>
     </TouchableOpacity>
@@ -293,6 +290,12 @@ export default function LearnScreen() {
               style={styles.videoPlayer}
               showControls={true}
               autoPlay={false}
+              // Lecture session tracking
+              lectureId={activeLecture._id}
+              totalDuration={activeLecture.duration}
+              onSessionUpdate={(sessionData) => {
+                console.log('Lecture session updated:', sessionData);
+              }}
             />
             
             <ThemedText style={styles.activeLessonTitle}>
@@ -323,24 +326,15 @@ export default function LearnScreen() {
                     style={styles.pdfViewer}
                     onError={(error: string) => {
                       console.error('PDF error:', error);
-                      Alert.alert('PDF Error', 'Failed to open PDF notes. Please try again.');
+                      Alert.alert('PDF Error', 'Failed to load PDF notes. Please try again.');
                     }}
                   />
                 )}
               </View>
             )}
             
-            <View style={styles.videoControls}>
-              <TouchableOpacity style={styles.videoControlButton}>
-                <FontAwesome name="step-backward" size={20} color="#666666" />
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.videoControlButton, styles.playButton]}>
-                <FontAwesome name="play" size={24} color="#FFFFFF" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.videoControlButton}>
-                <FontAwesome name="step-forward" size={20} color="#666666" />
-              </TouchableOpacity>
-            </View>
+          
+            
           </ThemedView>
         )}
         

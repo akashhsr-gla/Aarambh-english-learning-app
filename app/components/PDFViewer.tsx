@@ -1,16 +1,17 @@
 import { FontAwesome } from '@expo/vector-icons';
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, Linking, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Dimensions, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { WebView } from 'react-native-webview';
 import { ThemedText } from '../../components/ThemedText';
 import { ThemedView } from '../../components/ThemedView';
 import { convertGoogleDriveUrl, isGoogleDriveUrl, validateGoogleDriveUrl } from '../utils/googleDriveHelper';
+
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 interface PDFViewerProps {
   pdfUrl: string;
   title?: string;
   style?: any;
-  showDownloadButton?: boolean;
-  showOpenButton?: boolean;
   onError?: (error: string) => void;
 }
 
@@ -18,11 +19,9 @@ export default function PDFViewer({
   pdfUrl,
   title = 'PDF Document',
   style,
-  showDownloadButton = true,
-  showOpenButton = true,
   onError
 }: PDFViewerProps) {
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -31,75 +30,16 @@ export default function PDFViewer({
   const isGoogleDrive = isGoogleDriveUrl(pdfUrl);
   const validation = validateGoogleDriveUrl(pdfUrl);
 
-  // Handle PDF open
-  const handleOpenPDF = async () => {
-    try {
-      setIsLoading(true);
-      setHasError(false);
-      
-      // Check if the URL can be opened
-      const canOpen = await Linking.canOpenURL(directPdfUrl);
-      
-      if (canOpen) {
-        await Linking.openURL(directPdfUrl);
-      } else {
-        throw new Error('Cannot open PDF URL');
-      }
-    } catch (error) {
-      console.error('Error opening PDF:', error);
-      const errorMsg = error instanceof Error ? error.message : 'Failed to open PDF';
-      setHasError(true);
-      setErrorMessage(errorMsg);
-      
-      if (onError) {
-        onError(errorMsg);
-      }
-      
-      Alert.alert(
-        'PDF Error',
-        `Failed to open PDF: ${errorMsg}\n\nPlease make sure the PDF is accessible and try again.`,
-        [{ text: 'OK' }]
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Handle PDF download
-  const handleDownloadPDF = async () => {
-    try {
-      setIsLoading(true);
-      setHasError(false);
-      
-      // For Google Drive PDFs, we can use the download URL
-      const downloadUrl = isGoogleDrive 
-        ? `https://drive.google.com/uc?export=download&id=${validation.fileId}`
-        : directPdfUrl;
-      
-      const canOpen = await Linking.canOpenURL(downloadUrl);
-      
-      if (canOpen) {
-        await Linking.openURL(downloadUrl);
-      } else {
-        throw new Error('Cannot download PDF');
-      }
-    } catch (error) {
-      console.error('Error downloading PDF:', error);
-      const errorMsg = error instanceof Error ? error.message : 'Failed to download PDF';
-      setHasError(true);
-      setErrorMessage(errorMsg);
-      
-      if (onError) {
-        onError(errorMsg);
-      }
-      
-      Alert.alert(
-        'Download Error',
-        `Failed to download PDF: ${errorMsg}\n\nPlease try opening the PDF instead.`,
-        [{ text: 'OK' }]
-      );
-    } finally {
-      setIsLoading(false);
+  // Handle PDF load error
+  const handleLoadError = (error: any) => {
+    console.error('PDF load error:', error);
+    setIsLoading(false);
+    setHasError(true);
+    const errorMsg = error?.message || 'Failed to load PDF';
+    setErrorMessage(errorMsg);
+    
+    if (onError) {
+      onError(errorMsg);
     }
   };
 
@@ -107,6 +47,7 @@ export default function PDFViewer({
   const handleRetry = () => {
     setHasError(false);
     setErrorMessage('');
+    setIsLoading(true);
   };
 
   return (
@@ -136,80 +77,55 @@ export default function PDFViewer({
         )}
       </View>
 
-      {/* PDF Preview/Info */}
-      <View style={styles.previewContainer}>
-        <View style={styles.previewIcon}>
-          <FontAwesome name="file-pdf-o" size={48} color="#DC2626" />
-        </View>
-        
-        <ThemedText style={styles.previewText}>
-          {isGoogleDrive ? 'Google Drive PDF' : 'PDF Document'}
-        </ThemedText>
-        
-        <ThemedText style={styles.urlText} numberOfLines={2}>
-          {directPdfUrl}
-        </ThemedText>
+      {/* PDF Viewer Container */}
+      <View style={styles.pdfContainer}>
+        {isLoading && (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#DC2626" />
+            <ThemedText style={styles.loadingText}>Loading PDF...</ThemedText>
+          </View>
+        )}
+
+        {hasError && (
+          <View style={styles.errorContainer}>
+            <FontAwesome name="exclamation-triangle" size={48} color="#DC2626" />
+            <ThemedText style={styles.errorText}>Failed to load PDF</ThemedText>
+            <ThemedText style={styles.errorSubtext}>{errorMessage}</ThemedText>
+            <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
+              <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {!hasError && (
+          <WebView
+            source={{ uri: `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(directPdfUrl)}` }}
+            style={styles.pdf}
+            onLoadStart={() => setIsLoading(true)}
+            onLoadEnd={() => {
+              setIsLoading(false);
+              setHasError(false);
+            }}
+            onError={(syntheticEvent) => {
+              const { nativeEvent } = syntheticEvent;
+              console.error('WebView error: ', nativeEvent);
+              handleLoadError({ message: 'Failed to load PDF in WebView' });
+            }}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            startInLoadingState={true}
+            scalesPageToFit={true}
+            allowsInlineMediaPlayback={true}
+            mediaPlaybackRequiresUserAction={false}
+          />
+        )}
       </View>
 
-      {/* Error State */}
-      {hasError && (
-        <View style={styles.errorContainer}>
-          <FontAwesome name="exclamation-triangle" size={24} color="#EF4444" />
-          <ThemedText style={styles.errorText}>{errorMessage}</ThemedText>
-          <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
-            <ThemedText style={styles.retryButtonText}>Retry</ThemedText>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Action Buttons */}
+      {/* PDF Info */}
       {!hasError && (
-        <View style={styles.buttonContainer}>
-          {showOpenButton && (
-            <TouchableOpacity
-              style={[styles.actionButton, styles.openButton]}
-              onPress={handleOpenPDF}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <FontAwesome name="external-link" size={16} color="#FFFFFF" />
-              )}
-              <ThemedText style={styles.buttonText}>
-                {isLoading ? 'Opening...' : 'Open PDF'}
-              </ThemedText>
-            </TouchableOpacity>
-          )}
-          
-          {showDownloadButton && (
-            <TouchableOpacity
-              style={[styles.actionButton, styles.downloadButton]}
-              onPress={handleDownloadPDF}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
-              ) : (
-                <FontAwesome name="download" size={16} color="#FFFFFF" />
-              )}
-              <ThemedText style={styles.buttonText}>
-                {isLoading ? 'Downloading...' : 'Download'}
-              </ThemedText>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
-
-      {/* Debug Info (for development) */}
-      {__DEV__ && (
-        <View style={styles.debugContainer}>
-          <ThemedText style={styles.debugText}>Original URL: {pdfUrl}</ThemedText>
-          <ThemedText style={styles.debugText}>Direct URL: {directPdfUrl}</ThemedText>
-          <ThemedText style={styles.debugText}>
-            Validation: {validation.isValid ? 'Valid' : 'Invalid'} | 
-            Google Drive: {isGoogleDrive ? 'Yes' : 'No'} | 
-            File ID: {validation.fileId || 'None'}
+        <View style={styles.infoContainer}>
+          <ThemedText style={styles.infoText}>
+            Use pinch to zoom and scroll to navigate the PDF
           </ThemedText>
         </View>
       )}
@@ -220,22 +136,19 @@ export default function PDFViewer({
 const styles = StyleSheet.create({
   container: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginVertical: 8,
+    borderRadius: 10,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    padding: 15,
+    backgroundColor: '#F9FAFB',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
   titleContainer: {
     flexDirection: 'row',
@@ -269,92 +182,81 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   statusText: {
-    fontSize: 10,
+    fontSize: 12,
     fontWeight: '500',
+    color: '#065F46',
     marginLeft: 4,
   },
-  previewContainer: {
+  pdfContainer: {
+    height: 400,
+    backgroundColor: '#F3F4F6',
+    position: 'relative',
+  },
+  pdf: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  loadingContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 20,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 8,
-    marginBottom: 16,
+    backgroundColor: '#F3F4F6',
   },
-  previewIcon: {
-    marginBottom: 12,
-  },
-  previewText: {
-    fontSize: 14,
-    fontWeight: '500',
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
     color: '#6B7280',
-    marginBottom: 8,
-  },
-  urlText: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    textAlign: 'center',
-    fontFamily: 'monospace',
   },
   errorContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 16,
-    backgroundColor: '#FEF2F2',
-    borderRadius: 8,
-    marginBottom: 16,
+    backgroundColor: '#F3F4F6',
+    padding: 20,
   },
   errorText: {
-    fontSize: 14,
+    fontSize: 18,
+    fontWeight: '600',
     color: '#DC2626',
+    marginTop: 10,
     textAlign: 'center',
-    marginTop: 8,
-    marginBottom: 12,
+  },
+  errorSubtext: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginTop: 5,
+    textAlign: 'center',
   },
   retryButton: {
     backgroundColor: '#DC2626',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 6,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginTop: 15,
   },
   retryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    gap: 8,
-  },
-  openButton: {
-    backgroundColor: '#3B82F6',
-  },
-  downloadButton: {
-    backgroundColor: '#10B981',
-  },
-  buttonText: {
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '600',
   },
-  debugContainer: {
-    marginTop: 12,
-    padding: 8,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 6,
+  infoContainer: {
+    padding: 15,
+    backgroundColor: '#F9FAFB',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    alignItems: 'center',
   },
-  debugText: {
-    fontSize: 10,
+  infoText: {
+    fontSize: 14,
     color: '#6B7280',
-    fontFamily: 'monospace',
-    marginBottom: 2,
+    textAlign: 'center',
   },
 });

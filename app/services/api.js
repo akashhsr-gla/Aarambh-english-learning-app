@@ -542,6 +542,39 @@ export const sessionsAPI = {
   getActiveGroupSession: async () => {
     return await apiRequest('/sessions/groups/active');
   },
+
+  // Lecture session management
+  createOrUpdateLectureSession: async (lectureData) => {
+    return await apiRequest('/sessions/lectures/create-or-update', {
+      method: 'POST',
+      body: JSON.stringify(lectureData)
+    });
+  },
+
+  getActiveLectureSession: async () => {
+    return await apiRequest('/sessions/lectures/active');
+  },
+
+  updateLectureProgress: async (sessionId, progressData) => {
+    return await apiRequest(`/sessions/lectures/${sessionId}/progress`, {
+      method: 'POST',
+      body: JSON.stringify(progressData)
+    });
+  },
+
+  addLectureBookmark: async (sessionId, bookmarkData) => {
+    return await apiRequest(`/sessions/lectures/${sessionId}/bookmark`, {
+      method: 'POST',
+      body: JSON.stringify(bookmarkData)
+    });
+  },
+
+  updateLectureNotes: async (sessionId, notesData) => {
+    return await apiRequest(`/sessions/lectures/${sessionId}/notes`, {
+      method: 'POST',
+      body: JSON.stringify(notesData)
+    });
+  },
 };
 
 // Lectures API

@@ -1,9 +1,10 @@
 import { FontAwesome } from '@expo/vector-icons';
 import { AVPlaybackStatus, ResizeMode, Video } from 'expo-av';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Dimensions, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { ThemedText } from '../../components/ThemedText';
 import { ThemedView } from '../../components/ThemedView';
+import { sessionsAPI } from '../services/api';
 
 interface VideoPlayerProps {
   videoUrl: string;
@@ -17,6 +18,10 @@ interface VideoPlayerProps {
   loop?: boolean;
   muted?: boolean;
   resizeMode?: ResizeMode;
+  // Lecture session tracking
+  lectureId?: string;
+  totalDuration?: number;
+  onSessionUpdate?: (sessionData: any) => void;
 }
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -32,13 +37,22 @@ export default function VideoPlayer({
   autoPlay = false,
   loop = false,
   muted = false,
-  resizeMode = ResizeMode.CONTAIN
+  resizeMode = ResizeMode.CONTAIN,
+  // Lecture session tracking
+  lectureId,
+  totalDuration,
+  onSessionUpdate
 }: VideoPlayerProps) {
   const [status, setStatus] = useState<AVPlaybackStatus>({} as AVPlaybackStatus);
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const videoRef = useRef<Video>(null);
+  
+  // Lecture session tracking
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [lastPosition, setLastPosition] = useState(0);
+  const [isSessionActive, setIsSessionActive] = useState(false);
 
   // Handle playback status updates
   const handlePlaybackStatusUpdate = (playbackStatus: AVPlaybackStatus) => {
@@ -72,10 +86,28 @@ export default function VideoPlayer({
   const togglePlayPause = async () => {
     try {
       if ('isLoaded' in status && status.isLoaded) {
+        const currentPosition = Math.floor((('positionMillis' in status ? status.positionMillis : 0) || 0) / 1000);
+        
         if ('isPlaying' in status && status.isPlaying) {
           await videoRef.current?.pauseAsync();
+          // Track pause in session
+          if (lectureId) {
+            if (!isSessionActive) {
+              await createOrUpdateLectureSession(currentPosition, 'pause');
+            } else {
+              await updateLectureProgress(currentPosition, 'pause');
+            }
+          }
         } else {
           await videoRef.current?.playAsync();
+          // Track play in session
+          if (lectureId) {
+            if (!isSessionActive) {
+              await createOrUpdateLectureSession(currentPosition, 'play');
+            } else {
+              await updateLectureProgress(currentPosition, 'play');
+            }
+          }
         }
       }
     } catch (error) {
@@ -91,6 +123,16 @@ export default function VideoPlayer({
     try {
       if ('isLoaded' in status && status.isLoaded) {
         await videoRef.current?.setPositionAsync(positionMillis);
+        
+        // Track seek in session
+        if (lectureId) {
+          const position = Math.floor(positionMillis / 1000);
+          if (!isSessionActive) {
+            await createOrUpdateLectureSession(position, 'seek');
+          } else {
+            await updateLectureProgress(position, 'seek');
+          }
+        }
       }
     } catch (error) {
       console.error('Error seeking video:', error);
@@ -118,6 +160,63 @@ export default function VideoPlayer({
     }
   };
 
+  // Lecture session management functions
+  const createOrUpdateLectureSession = async (position: number, action: string = 'play') => {
+    if (!lectureId) return;
+
+    try {
+      const response = await sessionsAPI.createOrUpdateLectureSession({
+        lectureId,
+        totalDuration,
+        position,
+        action
+      });
+
+      if (response.success) {
+        setCurrentSessionId(response.data.sessionId);
+        setIsSessionActive(true);
+        
+        if (onSessionUpdate) {
+          onSessionUpdate(response.data);
+        }
+      }
+    } catch (error) {
+      console.error('Error creating/updating lecture session:', error);
+    }
+  };
+
+  const updateLectureProgress = async (position: number, action: string = 'play') => {
+    if (!currentSessionId || !isSessionActive) return;
+
+    try {
+      await sessionsAPI.updateLectureProgress(currentSessionId, {
+        position,
+        action
+      });
+    } catch (error) {
+      console.error('Error updating lecture progress:', error);
+    }
+  };
+
+  // Track position changes for session updates
+  useEffect(() => {
+    if (!lectureId || !isSessionActive) return;
+
+    const interval = setInterval(() => {
+      if ('positionMillis' in status && status.isLoaded && 'isPlaying' in status && status.isPlaying) {
+        const currentPosition = Math.floor((status.positionMillis || 0) / 1000);
+        
+        // Update session every 10 seconds or on significant position changes
+        if (currentPosition - lastPosition >= 10 || Math.abs(currentPosition - lastPosition) >= 30) {
+          updateLectureProgress(currentPosition, 'play');
+          setLastPosition(currentPosition);
+        }
+      }
+    }, 10000); // Check every 10 seconds
+
+    return () => clearInterval(interval);
+  }, [lectureId, isSessionActive, status, lastPosition, currentSessionId]);
+
   // Check if URL is a Google Drive URL and show appropriate message
   const isGoogleDriveUrl = videoUrl.includes('drive.google.com');
   const isDirectGoogleDriveUrl = videoUrl.includes('uc?export=view');
@@ -134,7 +233,7 @@ export default function VideoPlayer({
           shouldPlay={autoPlay}
           isLooping={loop}
           isMuted={muted}
-          useNativeControls={showControls}
+          useNativeControls={false}
           onPlaybackStatusUpdate={handlePlaybackStatusUpdate}
           onError={handleLoadError}
         />
@@ -173,8 +272,8 @@ export default function VideoPlayer({
           </View>
         )}
 
-        {/* Custom Controls (when native controls are disabled) */}
-        {!showControls && 'isLoaded' in status && status.isLoaded && (
+        {/* Custom Controls */}
+        {'isLoaded' in status && status.isLoaded && (
           <View style={styles.customControls}>
             <TouchableOpacity style={styles.playButton} onPress={togglePlayPause}>
               <FontAwesome 
@@ -206,17 +305,6 @@ export default function VideoPlayer({
         </View>
       )}
 
-      {/* Video URL Debug Info (for development) */}
-      {__DEV__ && (
-        <View style={styles.debugInfo}>
-          <ThemedText style={styles.debugText}>URL: {videoUrl}</ThemedText>
-          <ThemedText style={styles.debugText}>
-            Status: {'isLoaded' in status && status.isLoaded ? 'Loaded' : 'Loading'} | 
-            Playing: {'isPlaying' in status && status.isPlaying ? 'Yes' : 'No'} | 
-            Duration: {'durationMillis' in status && status.durationMillis ? formatTime(status.durationMillis) : 'Unknown'}
-          </ThemedText>
-        </View>
-      )}
     </ThemedView>
   );
 }
@@ -333,16 +421,5 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: '#FF6B6B',
     borderRadius: 2,
-  },
-  debugInfo: {
-    padding: 10,
-    backgroundColor: '#2A2A2A',
-    borderTopWidth: 1,
-    borderTopColor: '#444444',
-  },
-  debugText: {
-    color: '#CCCCCC',
-    fontSize: 10,
-    fontFamily: 'monospace',
   },
 });

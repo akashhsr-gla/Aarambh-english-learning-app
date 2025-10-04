@@ -925,4 +925,257 @@ router.get('/recent', authenticateToken, async (req, res) => {
   }
 });
 
+// 12. CREATE OR UPDATE LECTURE SESSION
+router.post('/lectures/create-or-update', authenticateToken, async (req, res) => {
+  try {
+    const { 
+      lectureId, 
+      totalDuration,
+      position = 0,
+      action = 'play'
+    } = req.body;
+
+    if (!lectureId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Lecture ID is required'
+      });
+    }
+
+    // Check if lecture exists
+    const VideoLecture = require('../models/VideoLecture');
+    const lecture = await VideoLecture.findById(lectureId);
+    if (!lecture) {
+      return res.status(404).json({
+        success: false,
+        message: 'Lecture not found'
+      });
+    }
+
+    // Look for existing lecture session
+    const sessionQuery = {
+      host: req.user._id,
+      sessionType: 'lecture',
+      'lectureSession.lecture': lectureId
+    };
+    
+    let session = await Session.findOne(sessionQuery);
+
+    if (session) {
+      // Update existing session
+      session.updateLectureProgress(position, action);
+      if (totalDuration) {
+        session.lectureSession.totalDuration = totalDuration;
+      }
+    } else {
+      // Create new lecture session
+      session = new Session({
+        sessionId: `lecture_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        sessionType: 'lecture',
+        title: `Watching: ${lecture.title}`,
+        host: req.user._id,
+        participants: [{
+          user: req.user._id,
+          role: 'viewer',
+          joinedAt: new Date()
+        }],
+        lectureSession: {
+          lecture: lectureId,
+          totalDuration: totalDuration || lecture.duration,
+          watchTime: position,
+          completionPercentage: 0,
+          isCompleted: false,
+          lastWatchedAt: new Date(),
+          watchHistory: [],
+          bookmarks: []
+        }
+      });
+      
+      session.startLecture(lectureId, totalDuration || lecture.duration);
+      if (position > 0) {
+        session.updateLectureProgress(position, action);
+      }
+    }
+
+    await session.save();
+
+    res.json({
+      success: true,
+      message: 'Lecture session saved successfully',
+      data: {
+        sessionId: session._id,
+        lectureId: lectureId,
+        watchTime: session.lectureSession.watchTime,
+        completionPercentage: session.lectureSession.completionPercentage,
+        isCompleted: session.lectureSession.isCompleted
+      }
+    });
+
+  } catch (error) {
+    console.error('Create/update lecture session error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// 13. GET ACTIVE LECTURE SESSION
+router.get('/lectures/active', authenticateToken, async (req, res) => {
+  try {
+    const session = await Session.findOne({
+      host: req.user._id,
+      sessionType: 'lecture',
+      status: { $in: ['active', 'scheduled'] }
+    })
+    .populate('lectureSession.lecture', 'title description duration videoUrl thumbnailUrl')
+    .sort({ createdAt: -1 });
+
+    if (!session) {
+      return res.json({
+        success: true,
+        message: 'No active lecture session found',
+        data: null
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Active lecture session retrieved',
+      data: {
+        sessionId: session._id,
+        lectureSession: session.lectureSession,
+        status: session.status,
+        startedAt: session.startedAt
+      }
+    });
+
+  } catch (error) {
+    console.error('Get active lecture session error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// 14. UPDATE LECTURE PROGRESS
+router.post('/lectures/:sessionId/progress', authenticateToken, async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { position, action = 'play' } = req.body;
+
+    const session = await Session.findOne({
+      _id: sessionId,
+      host: req.user._id,
+      sessionType: 'lecture'
+    });
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: 'Lecture session not found'
+      });
+    }
+
+    session.updateLectureProgress(position, action);
+    await session.save();
+
+    res.json({
+      success: true,
+      message: 'Lecture progress updated successfully',
+      data: {
+        watchTime: session.lectureSession.watchTime,
+        completionPercentage: session.lectureSession.completionPercentage,
+        isCompleted: session.lectureSession.isCompleted
+      }
+    });
+
+  } catch (error) {
+    console.error('Update lecture progress error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// 15. ADD LECTURE BOOKMARK
+router.post('/lectures/:sessionId/bookmark', authenticateToken, async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { position, title, note } = req.body;
+
+    const session = await Session.findOne({
+      _id: sessionId,
+      host: req.user._id,
+      sessionType: 'lecture'
+    });
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: 'Lecture session not found'
+      });
+    }
+
+    session.addLectureBookmark(position, title, note);
+    await session.save();
+
+    res.json({
+      success: true,
+      message: 'Bookmark added successfully',
+      data: {
+        bookmarks: session.lectureSession.bookmarks
+      }
+    });
+
+  } catch (error) {
+    console.error('Add lecture bookmark error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// 16. UPDATE LECTURE NOTES
+router.post('/lectures/:sessionId/notes', authenticateToken, async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { notes } = req.body;
+
+    const session = await Session.findOne({
+      _id: sessionId,
+      host: req.user._id,
+      sessionType: 'lecture'
+    });
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: 'Lecture session not found'
+      });
+    }
+
+    session.updateLectureNotes(notes);
+    await session.save();
+
+    res.json({
+      success: true,
+      message: 'Lecture notes updated successfully',
+      data: {
+        notes: session.lectureSession.notes
+      }
+    });
+
+  } catch (error) {
+    console.error('Update lecture notes error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
 module.exports = router;

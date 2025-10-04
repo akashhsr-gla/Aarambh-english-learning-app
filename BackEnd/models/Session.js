@@ -10,7 +10,7 @@ const sessionSchema = new mongoose.Schema({
   },
   sessionType: {
     type: String,
-    enum: ['video_call', 'voice_call', 'chat', 'group_video_call', 'group_voice_call', 'group_chat', 'group_discussion', 'game'],
+    enum: ['video_call', 'voice_call', 'chat', 'group_video_call', 'group_voice_call', 'group_chat', 'group_discussion', 'game', 'lecture'],
     required: true
   },
   title: {
@@ -200,6 +200,74 @@ const sessionSchema = new mongoose.Schema({
     endTime: {
       type: Date
     }
+  },
+  
+  // Lecture Session Specific Fields
+  lectureSession: {
+    lecture: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'VideoLecture',
+      required: function() {
+        return this.sessionType === 'lecture';
+      }
+    },
+    watchTime: {
+      type: Number, // in seconds
+      default: 0
+    },
+    totalDuration: {
+      type: Number, // in seconds
+      default: 0
+    },
+    completionPercentage: {
+      type: Number, // 0-100
+      default: 0
+    },
+    isCompleted: {
+      type: Boolean,
+      default: false
+    },
+    lastWatchedAt: {
+      type: Date,
+      default: Date.now
+    },
+    watchHistory: [{
+      timestamp: {
+        type: Date,
+        default: Date.now
+      },
+      position: {
+        type: Number, // in seconds
+        required: true
+      },
+      action: {
+        type: String,
+        enum: ['play', 'pause', 'seek', 'complete'],
+        required: true
+      }
+    }],
+    notes: {
+      type: String,
+      trim: true
+    },
+    bookmarks: [{
+      position: {
+        type: Number, // in seconds
+        required: true
+      },
+      title: {
+        type: String,
+        trim: true
+      },
+      note: {
+        type: String,
+        trim: true
+      },
+      createdAt: {
+        type: Date,
+        default: Date.now
+      }
+    }]
   },
   
   // Chat Session Specific Fields
@@ -619,6 +687,70 @@ sessionSchema.methods.startGame = function(gameId, gameType, difficulty, totalQu
     this.gameSession.answers = [];
     
     this.startSession();
+  }
+};
+
+// Method to start lecture session
+sessionSchema.methods.startLecture = function(lectureId, totalDuration) {
+  if (this.sessionType === 'lecture') {
+    this.lectureSession = this.lectureSession || {};
+    this.lectureSession.lecture = lectureId;
+    this.lectureSession.totalDuration = totalDuration;
+    this.lectureSession.watchTime = 0;
+    this.lectureSession.completionPercentage = 0;
+    this.lectureSession.isCompleted = false;
+    this.lectureSession.lastWatchedAt = new Date();
+    this.lectureSession.watchHistory = [];
+    this.lectureSession.bookmarks = [];
+    
+    this.startSession();
+  }
+};
+
+// Method to update lecture watch progress
+sessionSchema.methods.updateLectureProgress = function(position, action = 'play') {
+  if (this.sessionType === 'lecture' && this.lectureSession) {
+    this.lectureSession.watchTime = Math.max(this.lectureSession.watchTime, position);
+    this.lectureSession.lastWatchedAt = new Date();
+    
+    // Add to watch history
+    this.lectureSession.watchHistory.push({
+      position,
+      action,
+      timestamp: new Date()
+    });
+    
+    // Calculate completion percentage
+    if (this.lectureSession.totalDuration > 0) {
+      this.lectureSession.completionPercentage = Math.min(
+        Math.round((this.lectureSession.watchTime / this.lectureSession.totalDuration) * 100),
+        100
+      );
+      
+      // Mark as completed if watched 90% or more
+      if (this.lectureSession.completionPercentage >= 90) {
+        this.lectureSession.isCompleted = true;
+      }
+    }
+  }
+};
+
+// Method to add bookmark to lecture
+sessionSchema.methods.addLectureBookmark = function(position, title, note = '') {
+  if (this.sessionType === 'lecture' && this.lectureSession) {
+    this.lectureSession.bookmarks.push({
+      position,
+      title: title || `Bookmark at ${Math.floor(position / 60)}:${(position % 60).toString().padStart(2, '0')}`,
+      note,
+      createdAt: new Date()
+    });
+  }
+};
+
+// Method to update lecture notes
+sessionSchema.methods.updateLectureNotes = function(notes) {
+  if (this.sessionType === 'lecture' && this.lectureSession) {
+    this.lectureSession.notes = notes;
   }
 };
 
