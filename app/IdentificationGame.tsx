@@ -756,6 +756,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     fontSize: 18,
     textAlign: 'center',
+    color: '#333333',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,

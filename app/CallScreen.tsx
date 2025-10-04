@@ -521,9 +521,25 @@ export default function CallScreen() {
 
     try {
       console.log('📱 Android: Initializing WebRTC...');
+      console.log('📱 Android: isVideoCall:', isVideoCall);
       
       const isInitiator = session.status === 'waiting_for_partner' || !partner;
       console.log('📱 Android: isInitiator:', isInitiator);
+
+      // Request permissions first
+      if (Platform.OS !== 'web') {
+        const hasMicPermission = await requestMicrophonePermission();
+        if (!hasMicPermission) {
+          throw new Error('Microphone permission denied');
+        }
+        
+        if (isVideoCall) {
+          const hasCameraPermission = await requestCameraPermission();
+          if (!hasCameraPermission) {
+            throw new Error('Camera permission denied');
+          }
+        }
+      }
 
       const configuration = {
         iceServers: [
@@ -563,6 +579,7 @@ export default function CallScreen() {
       pc.addTransceiver('audio', { direction: 'sendrecv' });
       if (isVideoCall) {
         pc.addTransceiver('video', { direction: 'sendrecv' });
+        console.log('📱 Android: Video transceiver added');
       }
       
       console.log('📱 Android: Transceivers added');
@@ -586,20 +603,22 @@ export default function CallScreen() {
         
         if (Platform.OS === 'web') {
           if (event.track.kind === 'audio') {
-          if (remoteAudioElRef.current) {
+            if (remoteAudioElRef.current) {
               remoteAudioElRef.current.srcObject = stream;
-            remoteAudioElRef.current.volume = 1.0;
-            remoteAudioElRef.current.muted = false;
+              remoteAudioElRef.current.volume = 1.0;
+              remoteAudioElRef.current.muted = false;
               remoteAudioElRef.current.autoplay = true;
               (remoteAudioElRef.current as any).playsInline = true;
               
-                remoteAudioElRef.current.play().then(() => {
+              remoteAudioElRef.current.play().then(() => {
+                console.log('✅ Web: Remote audio playing');
                 setIsConnected(true);
-                }).catch(e => {
-                  console.error('❌ Audio play error:', e);
+              }).catch(e => {
+                console.error('❌ Audio play error:', e);
                 setTimeout(() => {
                   if (remoteAudioElRef.current) {
                     remoteAudioElRef.current.play().then(() => {
+                      console.log('✅ Web: Remote audio playing (retry)');
                       setIsConnected(true);
                     }).catch(e2 => {
                       console.error('❌ Audio play retry error:', e2);
@@ -607,8 +626,8 @@ export default function CallScreen() {
                   }
                 }, 500);
               });
+            }
           }
-        }
         
           if (event.track.kind === 'video') {
             if (remoteVideoElRef.current) {
@@ -626,16 +645,20 @@ export default function CallScreen() {
           console.log('📱 Android: Setting connected state');
           setIsConnected(true);
           
+          // Enable all audio tracks
           stream.getAudioTracks().forEach((track: any) => {
             console.log('📱 Android: Audio track enabled:', track.enabled);
             track.enabled = true;
+            track.muted = false;
           });
           
+          // Enable all video tracks
           if (event.track.kind === 'video') {
             setConnectionEstablished(true);
             stream.getVideoTracks().forEach((track: any) => {
               console.log('📱 Android: Video track enabled:', track.enabled);
               track.enabled = true;
+              track.muted = false;
             });
           }
         }
@@ -839,6 +862,15 @@ export default function CallScreen() {
       setLocalStream(stream);
       
       if (pcRef.current) {
+        // Remove existing tracks first
+        const senders = (pcRef.current as any).getSenders();
+        senders.forEach((sender: any) => {
+          if (sender.track) {
+            (pcRef.current as any).removeTrack(sender);
+          }
+        });
+        
+        // Add new tracks
         stream.getTracks().forEach((track: any) => {
           console.log('📱 Android: Adding local track to peer connection:', track.kind);
           (pcRef.current as any)!.addTrack(track as any, stream);
@@ -957,11 +989,14 @@ export default function CallScreen() {
     const newMutedState = !isMuted;
     setIsMuted(newMutedState);
     
+    console.log('🎤 Toggle mute:', newMutedState ? 'MUTED' : 'UNMUTED');
+    
     if (session?.sessionId) {
       try {
         await communicationAPI.updateParticipantState(session.sessionId, {
           micEnabled: !newMutedState
         });
+        console.log('✅ Mic state updated on server');
       } catch (error) {
         console.error('Update mic state error:', error);
         setIsMuted(!newMutedState);
@@ -971,6 +1006,7 @@ export default function CallScreen() {
     if (localStreamRef.current) {
       localStreamRef.current.getAudioTracks().forEach((track: any) => {
         track.enabled = !newMutedState;
+        console.log('🎤 Local audio track enabled:', !newMutedState);
       });
     }
     

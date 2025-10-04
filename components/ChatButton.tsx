@@ -296,7 +296,13 @@ export default function ChatButton({ expandable = true, navigateOnClick = false 
   return (
     <>
       {expandable && chatExpanded ? (
-        <View style={styles.chatPanel}>
+        <View style={[
+          styles.chatPanel,
+          {
+            right: Math.max(10, Math.min(buttonPosition.right, windowDims.width - 320)), // Ensure panel stays on screen
+            bottom: Math.max(10, Math.min(buttonPosition.bottom, windowDims.height - 420)), // Ensure panel stays on screen
+          }
+        ]}>
           <View style={styles.chatPanelHeader}>
             <ThemedText style={styles.chatPanelTitle}>Language Assistant</ThemedText>
             <TouchableOpacity onPress={toggleChat}>
@@ -435,8 +441,6 @@ const styles = StyleSheet.create({
   // Chat Panel
   chatPanel: {
     position: 'absolute',
-    bottom: 20,
-    right: 20,
     width: '80%',
     maxWidth: 300,
     height: 400,

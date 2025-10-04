@@ -1,6 +1,6 @@
 import { FontAwesome } from '@expo/vector-icons';
 import React, { useState } from 'react';
-import { ActivityIndicator, Dimensions, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Dimensions, Linking, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { ThemedText } from '../../components/ThemedText';
 import { ThemedView } from '../../components/ThemedView';
@@ -48,6 +48,20 @@ export default function PDFViewer({
     setHasError(false);
     setErrorMessage('');
     setIsLoading(true);
+  };
+
+  // Handle opening Google Drive
+  const handleOpenGoogleDrive = async () => {
+    try {
+      const canOpen = await Linking.canOpenURL(pdfUrl);
+      if (canOpen) {
+        await Linking.openURL(pdfUrl);
+      } else {
+        console.error('Cannot open Google Drive URL');
+      }
+    } catch (error) {
+      console.error('Error opening Google Drive:', error);
+    }
   };
 
   return (
@@ -127,6 +141,16 @@ export default function PDFViewer({
           <ThemedText style={styles.infoText}>
             Use pinch to zoom and scroll to navigate the PDF
           </ThemedText>
+        </View>
+      )}
+
+      {/* Google Drive Button */}
+      {isGoogleDrive && !hasError && (
+        <View style={styles.driveButtonContainer}>
+          <TouchableOpacity style={styles.driveButton} onPress={handleOpenGoogleDrive}>
+            <FontAwesome name="external-link" size={16} color="#4285F4" />
+            <ThemedText style={styles.driveButtonText}>Open in Google Drive</ThemedText>
+          </TouchableOpacity>
         </View>
       )}
     </ThemedView>
@@ -258,5 +282,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6B7280',
     textAlign: 'center',
+  },
+  driveButtonContainer: {
+    padding: 15,
+    backgroundColor: '#F9FAFB',
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    alignItems: 'center',
+  },
+  driveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E8F0FE',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25,
+    borderWidth: 1,
+    borderColor: '#4285F4',
+  },
+  driveButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#4285F4',
+    marginLeft: 8,
   },
 });
