@@ -4,7 +4,7 @@ import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Modal, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, PermissionsAndroid, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import FeatureAccessWrapper from './components/FeatureAccessWrapper';
 import { useFeatureAccess } from './hooks/useFeatureAccess';
@@ -66,7 +66,6 @@ export default function CallScreen() {
   const [videoRequestFrom, setVideoRequestFrom] = useState<string | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [connectionEstablished, setConnectionEstablished] = useState(false);
-  const [hasVideoStream, setHasVideoStream] = useState(false);
 
   // Feature access control
   const { canAccess: canMakeCalls, featureInfo: callFeatureInfo } = useFeatureAccess('video_calls');
@@ -509,11 +508,9 @@ export default function CallScreen() {
       pcRef.current = pc;
       
       // Add transceivers to ensure we can receive media
-      if (Platform.OS === 'web') {
-        pc.addTransceiver('audio', { direction: 'sendrecv' });
-        if (isVideoCall) {
-          pc.addTransceiver('video', { direction: 'sendrecv' });
-        }
+      pc.addTransceiver('audio', { direction: 'sendrecv' });
+      if (isVideoCall) {
+        pc.addTransceiver('video', { direction: 'sendrecv' });
       }
       
       // Handle remote stream - platform-specific implementation
@@ -568,9 +565,6 @@ export default function CallScreen() {
           
           // For mobile, ensure we have the stream for RTCView
           if (event.track.kind === 'video') {
-            console.log('📹 Remote video track received (Mobile)');
-            setHasVideoStream(true);
-            // Force re-render by updating state
             setConnectionEstablished(true);
           }
         }
@@ -669,6 +663,28 @@ export default function CallScreen() {
     }
   };
   
+  const requestCameraPermission = async () => {
+    if (Platform.OS === 'android') {
+      try {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.CAMERA,
+          {
+            title: 'Camera Permission',
+            message: 'This app needs access to your camera to make video calls.',
+            buttonNeutral: 'Ask Me Later',
+            buttonNegative: 'Cancel',
+            buttonPositive: 'OK',
+          }
+        );
+        return granted === PermissionsAndroid.RESULTS.GRANTED;
+      } catch (err) {
+        console.warn('Camera permission error:', err);
+        return false;
+      }
+    }
+    return true; // iOS handles permissions automatically
+  };
+
   const getLocalMedia = async () => {
     try {
       let stream;
@@ -690,6 +706,14 @@ export default function CallScreen() {
         }
       } else {
         // React Native implementation
+        // Request camera permission for video calls
+        if (isVideoCall) {
+          const hasCameraPermission = await requestCameraPermission();
+          if (!hasCameraPermission) {
+            throw new Error('Camera permission denied');
+          }
+        }
+        
         const constraints = {
           audio: true,
           video: isVideoCall ? {
@@ -700,7 +724,6 @@ export default function CallScreen() {
         };
         
         stream = await mediaDevices.getUserMedia(constraints);
-        console.log('📹 Local video stream created for Android:', stream.getVideoTracks().length, 'video tracks');
       }
       
       localStreamRef.current = stream;
@@ -710,11 +733,28 @@ export default function CallScreen() {
         stream.getTracks().forEach((track: any) => {
           (pcRef.current as any)!.addTrack(track as any, stream);
         });
+        
+        // For video calls on mobile, ensure video transceiver is added
+        if (isVideoCall && Platform.OS !== 'web') {
+          const videoTracks = stream.getVideoTracks();
+          if (videoTracks.length > 0) {
+            // Add video transceiver if not already added
+            const transceivers = (pcRef.current as any).getTransceivers();
+            const hasVideoTransceiver = transceivers.some((t: any) => t.sender && t.sender.track && t.sender.track.kind === 'video');
+            if (!hasVideoTransceiver) {
+              (pcRef.current as any).addTransceiver('video', { direction: 'sendrecv' });
+            }
+          }
+        }
       }
       
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to get local media:', error);
-      setPermissionError('Please allow microphone' + (isVideoCall ? ' and camera' : '') + ' access to join the call.');
+      if (error.message === 'Camera permission denied') {
+        setPermissionError('Camera permission is required for video calls. Please enable camera access in your device settings.');
+      } else {
+        setPermissionError('Please allow microphone' + (isVideoCall ? ' and camera' : '') + ' access to join the call.');
+      }
     }
   };
   
@@ -883,7 +923,18 @@ export default function CallScreen() {
       const response = await communicationAPI.respondToVideoUpgrade(session.sessionId, accept);
       if (response.success) {
         if (accept) {
-    setIsVideoCall(true);
+          // Request camera permission for Android before upgrading to video
+          if (Platform.OS !== 'web') {
+            const hasCameraPermission = await requestCameraPermission();
+            if (!hasCameraPermission) {
+              Alert.alert('Camera Permission Required', 'Camera access is needed for video calls. Please enable camera permission in your device settings.');
+              setShowVideoRequest(false);
+              setVideoRequestFrom(null);
+              return;
+            }
+          }
+          
+          setIsVideoCall(true);
           setSession(prev => prev ? { ...prev, sessionType: 'video_call' } : null);
           
           // Add video track to existing stream
@@ -910,6 +961,34 @@ export default function CallScreen() {
               }
             } catch (error) {
               console.error('❌ Failed to add video track:', error);
+            }
+          } else if (Platform.OS !== 'web' && localStreamRef.current && pcRef.current) {
+            // Android/iOS video upgrade
+            try {
+              const constraints = {
+                audio: false,
+                video: {
+                  width: { min: 640, ideal: 1280, max: 1920 },
+                  height: { min: 480, ideal: 720, max: 1080 },
+                  frameRate: { min: 15, ideal: 30, max: 30 }
+                }
+              };
+              
+              const videoStream = await mediaDevices.getUserMedia(constraints);
+              const videoTrack = videoStream.getVideoTracks()[0];
+              
+              if (videoTrack) {
+                // Add video track to existing stream
+                (localStreamRef.current as any).addTrack(videoTrack as any);
+                (pcRef.current as any).addTrack(videoTrack as any, localStreamRef.current);
+                
+                // Force renegotiation so remote receives the new video track
+                const offer = await pcRef.current.createOffer();
+                await pcRef.current.setLocalDescription(offer);
+                await communicationAPI.postOffer(session.sessionId, { type: offer.type, sdp: offer.sdp });
+              }
+            } catch (error) {
+              console.error('❌ Failed to add video track on mobile:', error);
             }
           }
         }
@@ -1097,7 +1176,7 @@ export default function CallScreen() {
                 muted={false}
               />
             ) : (
-              RTCView && hasVideoStream ? (
+              RTCView ? (
                 <RTCView
                   streamURL={remoteStreamRef.current?.toURL() || ''}
                   style={styles.remoteVideo}
@@ -1107,9 +1186,7 @@ export default function CallScreen() {
               ) : (
                 <View style={styles.videoPlaceholderContainer}>
                   <FontAwesome name="user" size={100} color="#FFFFFF" style={styles.videoPlaceholder} />
-                  <ThemedText style={styles.videoPlaceholderText}>
-                    {hasVideoStream ? 'Video Loading...' : 'No Video'}
-                  </ThemedText>
+                  <ThemedText style={styles.videoPlaceholderText}>No Video</ThemedText>
                 </View>
               )
             )}
@@ -1133,9 +1210,9 @@ export default function CallScreen() {
                   autoPlay
                 />
               ) : (
-                RTCView && localStreamRef.current ? (
+                RTCView ? (
                   <RTCView
-                    streamURL={localStreamRef.current.toURL()}
+                    streamURL={localStreamRef.current?.toURL() || ''}
                     style={styles.localVideo}
                     mirror={true}
                     objectFit="cover"
