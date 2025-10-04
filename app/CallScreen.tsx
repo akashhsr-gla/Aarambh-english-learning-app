@@ -93,12 +93,10 @@ export default function CallScreen() {
         const rName = userResp?.data?.user?.region?.name || userResp?.data?.region?.name;
         const userId = userResp?.data?.user?._id || userResp?.data?._id;
         if (rName) {
-          console.log('User region:', rName);
           setRegionName(rName);
         }
         if (userId) {
           currentUserIdRef.current = userId;
-          console.log('Current user ID stored:', userId);
         }
       } catch {}
       
@@ -113,9 +111,7 @@ export default function CallScreen() {
             // Resume audio context on user interaction
             const resumeAudio = () => {
               if (audioContext.state === 'suspended') {
-                audioContext.resume().then(() => {
-                  console.log('🔊 Audio context resumed');
-                });
+                audioContext.resume();
               }
             };
             
@@ -128,7 +124,6 @@ export default function CallScreen() {
         }
       } else {
         // For Android/iOS, ensure we have proper permissions
-        console.log('📱 Initializing mobile WebRTC...');
       }
       
       await findPartnerAndInitiateCall();
@@ -281,7 +276,6 @@ export default function CallScreen() {
           setCallStatus('active');
         } else if (partnerResponse.data?.waitingInQueue) {
           // We're now waiting for someone else to join
-          console.log('⏳ Waiting in queue for partner');
           const s = partnerResponse.data.session;
           const sessionData = {
             sessionId: s.id || s.sessionId,
@@ -421,7 +415,6 @@ export default function CallScreen() {
             if (activeSession) {
               // Check if session type changed to video_call
               if (activeSession.sessionType === 'video_call' && !isVideoCall) {
-                console.log('📹 Session upgraded to video call, switching to video mode');
                 setIsVideoCall(true);
                 setSession(prev => prev ? { ...prev, sessionType: 'video_call' } : null);
                 
@@ -477,7 +470,6 @@ export default function CallScreen() {
       // Determine if we are the initiator (the one who created the session)
       // If we're waiting for partner, we're the initiator. If we joined, we're not.
       const isInitiator = session.status === 'waiting_for_partner' || !partner;
-      console.log(`🎯 WebRTC Role: ${isInitiator ? 'INITIATOR (will create offer)' : 'JOINER (will create answer)'}`);
 
       // Create peer connection with platform-specific configuration
       const configuration = {
@@ -525,8 +517,6 @@ export default function CallScreen() {
       
       // Handle remote stream - platform-specific implementation
       (pc as any).ontrack = (event: any) => {
-        console.log('🎵 Received remote track:', event.track.kind, 'enabled:', event.track.enabled);
-        console.log('🎵 Stream details:', event.streams[0]);
         
         // Use the stream directly from the event
         const remoteStream = event.streams[0];
@@ -534,20 +524,18 @@ export default function CallScreen() {
         
         if (Platform.OS === 'web') {
           // Web platform - use HTML audio/video elements
-          if (event.track.kind === 'audio') {
-            console.log('🔊 Setting up remote audio (Web)');
-            if (remoteAudioElRef.current) {
+        if (event.track.kind === 'audio') {
+          if (remoteAudioElRef.current) {
               remoteAudioElRef.current.srcObject = remoteStream;
-              remoteAudioElRef.current.volume = 1.0;
-              remoteAudioElRef.current.muted = false;
+            remoteAudioElRef.current.volume = 1.0;
+            remoteAudioElRef.current.muted = false;
               remoteAudioElRef.current.autoplay = true;
               (remoteAudioElRef.current as any).playsInline = true;
               
-              remoteAudioElRef.current.play().then(() => {
-                console.log('🔊 Remote audio playing successfully');
+                remoteAudioElRef.current.play().then(() => {
                 setIsConnected(true);
-              }).catch(e => {
-                console.error('❌ Audio play error:', e);
+                }).catch(e => {
+                  console.error('❌ Audio play error:', e);
                 setTimeout(() => {
                   if (remoteAudioElRef.current) {
                     remoteAudioElRef.current.play().then(() => {
@@ -558,38 +546,24 @@ export default function CallScreen() {
                   }
                 }, 500);
               });
-            }
           }
-          
+        }
+        
           if (event.track.kind === 'video') {
-            console.log('📹 Setting up remote video (Web)');
             if (remoteVideoElRef.current) {
               remoteVideoElRef.current.srcObject = remoteStream;
               remoteVideoElRef.current.autoplay = true;
               remoteVideoElRef.current.playsInline = true;
               remoteVideoElRef.current.muted = false;
               
-              remoteVideoElRef.current.play().then(() => {
-                console.log('📹 Remote video playing successfully');
-              }).catch(e => {
+              remoteVideoElRef.current.play().catch(e => {
                 console.error('❌ Video play error:', e);
               });
             }
           }
         } else {
           // Android/iOS platform - streams are handled by RTCView
-          console.log('📱 Setting up remote stream (Mobile)');
           setIsConnected(true);
-          
-          // For mobile, the RTCView will automatically handle the stream
-          // We just need to ensure the stream is available
-          if (event.track.kind === 'audio') {
-            console.log('🔊 Remote audio track received (Mobile)');
-          }
-          
-          if (event.track.kind === 'video') {
-            console.log('📹 Remote video track received (Mobile)');
-          }
         }
       };
       
@@ -597,7 +571,6 @@ export default function CallScreen() {
       (pc as any).onicecandidate = async (event: any) => {
         if (event.candidate && session?.sessionId) {
           try {
-            console.log('🧊 Sending ICE candidate to server:', event.candidate.type);
             await communicationAPI.postIce(session.sessionId, {
               candidate: JSON.stringify(event.candidate),
               sdpMid: event.candidate.sdpMid,
@@ -606,58 +579,39 @@ export default function CallScreen() {
           } catch (error) {
             console.error('Failed to send ICE candidate:', error);
           }
-        } else if (event.candidate === null) {
-          console.log('🧊 ICE gathering complete');
         }
       };
       
       // Handle connection state changes
       (pc as any).onconnectionstatechange = () => {
-        console.log(`🔌 Connection state: ${pc.connectionState}`);
-        
-        // Handle connection state changes
         if (pc.connectionState === 'connected') {
-          console.log('🎉 WebRTC connection established!');
           setIsConnected(true);
           setConnectionEstablished(true);
         } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
           setIsConnected(false);
           setConnectionEstablished(false);
         } else if (pc.connectionState === 'connecting') {
-          console.log('🔄 WebRTC connecting...');
           setIsConnected(false);
         }
       };
       
       // Add ICE connection state change handler
       (pc as any).oniceconnectionstatechange = () => {
-        console.log(`🧊 ICE connection state: ${pc.iceConnectionState}`);
         if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
-          console.log('🎉 ICE connection established!');
           setIsConnected(true);
           setConnectionEstablished(true);
           clearTimeout(iceTimeout);
           
-          // Test audio connectivity
-          if (remoteAudioElRef.current && remoteStreamRef.current) {
-            console.log('🔊 Testing audio connection - remote audio tracks:', 
-                       remoteStreamRef.current.getAudioTracks().length);
-            
-            // Ensure audio is playing
-            if (remoteAudioElRef.current.paused) {
-              remoteAudioElRef.current.play().then(() => {
-                console.log('🔊 Audio started playing after ICE connection');
-              }).catch(e => {
-                console.error('❌ Failed to start audio after ICE connection:', e);
-              });
-            }
+          // Ensure audio is playing
+          if (remoteAudioElRef.current && remoteAudioElRef.current.paused) {
+            remoteAudioElRef.current.play().catch(e => {
+              console.error('❌ Failed to start audio after ICE connection:', e);
+            });
           }
         } else if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
-          console.log('❌ ICE connection failed/disconnected');
           setIsConnected(false);
           setConnectionEstablished(false);
         } else if (pc.iceConnectionState === 'checking') {
-          console.log('🔄 ICE checking - trying to connect...');
           setIsConnected(false);
         }
       };
@@ -666,56 +620,35 @@ export default function CallScreen() {
       const iceTimeout = setTimeout(() => {
         if (pc.iceConnectionState === 'checking') {
           console.log('⚠️ ICE still checking after 10s - may need TURN server');
-         
         }
       }, 10000);
       
       // Get local media first
       await getLocalMedia();
       
-      // Debug: Check if we got valid media
-      if (localStreamRef.current) {
-        const audioTracks = localStreamRef.current.getAudioTracks();
-      
-        
-        
-        const videoTracks = localStreamRef.current.getVideoTracks();
-        console.log(`📹 Got ${videoTracks.length} local video tracks`);
-        videoTracks.forEach((track: any, index: number) => {
-          console.log(`📹 Video track ${index}:`, {
-            enabled: track.enabled,
-            muted: track.muted,
-            readyState: track.readyState,
-            kind: track.kind
-          });
-        });
-      } else {
+      // Check if we got valid media
+      if (!localStreamRef.current) {
         console.error('❌ No local stream obtained');
       }
       
       // ONLY initiator creates the initial offer
       if (isInitiator) {
-        console.log('🎯 INITIATOR: Creating offer...');
         try {
           const offer = await pc.createOffer({
             offerToReceiveAudio: true,
             offerToReceiveVideo: isVideoCall
           });
-         
-          await pc.setLocalDescription(offer);
-         
           
-          const response = await communicationAPI.postOffer(session.sessionId, {
+          await pc.setLocalDescription(offer);
+          
+          await communicationAPI.postOffer(session.sessionId, {
             type: offer.type,
             sdp: offer.sdp
           });
-          console.log('✅ INITIATOR: Offer sent to server, response:', response);
         } catch (error) {
           console.error('❌ Failed to create/send offer:', error);
           setError('Failed to create call offer. Please try again.');
         }
-      } else {
-        console.log('🎯 JOINER: Waiting for offer from initiator...');
       }
       
       // Start signaling polling
@@ -795,26 +728,20 @@ export default function CallScreen() {
           // Make sure we're not applying our own offer
           if (currentUserId && signaling.offer.from && signaling.offer.from.toString() === currentUserId.toString()) {
             // This is our own offer, skip it
-            console.log('🔄 Skipping own offer');
           } else {
-            console.log('📨 Received offer from remote peer, creating answer...');
             try {
               await pcRef.current.setRemoteDescription({
                 type: 'offer',
                 sdp: signaling.offer.sdp
               });
-             
               
               const answer = await pcRef.current.createAnswer();
-      
               await pcRef.current.setLocalDescription(answer);
-           
               
-              const response = await communicationAPI.postAnswer(session.sessionId, {
+              await communicationAPI.postAnswer(session.sessionId, {
                 type: answer.type,
                 sdp: answer.sdp
               });
-             
             } catch (error) {
               console.error('❌ Failed to handle offer:', error);
             }
@@ -826,15 +753,12 @@ export default function CallScreen() {
           // Make sure we're not applying our own answer
           if (currentUserId && signaling.answer.from && signaling.answer.from.toString() === currentUserId.toString()) {
             // This is our own answer, skip it
-            console.log('🔄 Skipping own answer');
           } else {
-            console.log('📨 Received answer from remote peer');
             try {
               await pcRef.current.setRemoteDescription({
                 type: 'answer',
                 sdp: signaling.answer.sdp
               });
-              console.log('✅ Remote description set');
             } catch (error) {
               console.error('❌ Failed to set remote description:', error);
             }
@@ -861,10 +785,8 @@ export default function CallScreen() {
             appliedIceSetRef.current.add(key);
             
             try {
-              
               const iceCandidate = JSON.parse(candidate.candidate);
               await pcRef.current.addIceCandidate(iceCandidate);
-              
             } catch (error) {
               console.error('❌ Failed to add ICE candidate:', error);
               // Remove from applied set so we can retry later
@@ -900,7 +822,6 @@ export default function CallScreen() {
       localStreamRef.current.getAudioTracks().forEach((track: any) => {
         track.enabled = !newMutedState;
       });
-      console.log(`🎤 Audio track ${newMutedState ? 'muted' : 'unmuted'}`);
     }
     
     // Web-specific audio handling
@@ -912,21 +833,16 @@ export default function CallScreen() {
           const audioContext = new AudioContext();
           if (audioContext.state === 'suspended') {
             await audioContext.resume();
-            console.log('🔊 Audio context resumed on mute toggle');
           }
         }
         
         // Try to play remote audio
         if (remoteAudioElRef.current.paused) {
           await remoteAudioElRef.current.play();
-          console.log('🔊 Remote audio started playing on mute toggle');
         }
       } catch (error) {
         console.error('❌ Failed to resume audio on mute toggle:', error);
       }
-    } else if (Platform.OS !== 'web') {
-      // Android/iOS - audio is handled automatically by WebRTC
-      console.log('📱 Audio mute toggle on mobile - handled by WebRTC');
     }
   };
   
@@ -938,7 +854,6 @@ export default function CallScreen() {
     if (!session?.sessionId || isVideoCall) return;
     
     try {
-      
       const response = await communicationAPI.requestVideoUpgrade(session.sessionId);
       if (response.success) {
         Alert.alert('Video Request Sent', 'Waiting for the other person to accept video...');
@@ -987,8 +902,6 @@ export default function CallScreen() {
               console.error('❌ Failed to add video track:', error);
             }
           }
-        } else {
-          console.log('Video upgrade rejected');
         }
       }
       
@@ -1128,7 +1041,6 @@ export default function CallScreen() {
           const audioContext = new AudioContext();
           if (audioContext.state === 'suspended') {
             await audioContext.resume();
-            console.log('🔊 Audio context resumed on user interaction');
           }
         }
         
@@ -1139,12 +1051,9 @@ export default function CallScreen() {
       } catch (error) {
         console.error('❌ Failed to resume audio on user interaction:', error);
       }
-    } else {
-      // Android/iOS - no special handling needed for audio
-      console.log('📱 User interaction on mobile - audio should work automatically');
     }
   };
-
+  
   return (
     <TouchableOpacity 
       style={styles.container} 
@@ -1186,7 +1095,7 @@ export default function CallScreen() {
                   objectFit="cover"
                 />
               ) : (
-                <FontAwesome name="user" size={100} color="#FFFFFF" style={styles.videoPlaceholder} />
+            <FontAwesome name="user" size={100} color="#FFFFFF" style={styles.videoPlaceholder} />
               )
             )}
             {!isConnected && (
@@ -1217,7 +1126,7 @@ export default function CallScreen() {
                     objectFit="cover"
                   />
                 ) : (
-                  <FontAwesome name="user" size={40} color="#FFFFFF" />
+              <FontAwesome name="user" size={40} color="#FFFFFF" />
                 )
               )}
             </View>
@@ -1270,8 +1179,8 @@ export default function CallScreen() {
               pointerEvents: 'none'
             }} 
           />
-          
-          {/* Hidden video element for video calls */}
+      
+      {/* Hidden video element for video calls */}
           {isVideoCall && (
             <video 
               ref={remoteVideoElRef as any} 
