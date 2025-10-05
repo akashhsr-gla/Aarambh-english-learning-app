@@ -905,7 +905,7 @@ export default function CallScreen() {
           <View style={styles.additionalControlsContainer}>
             <TouchableOpacity 
               style={styles.additionalControlButton}
-              onPress={requestVideoUpgrade}
+              
             >
               <ThemedText style={styles.additionalControlLabel}>Video Call Coming Soon</ThemedText>
               <ThemedText style={styles.additionalControlLabel}>Video</ThemedText>
