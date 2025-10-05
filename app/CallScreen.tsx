@@ -144,41 +144,41 @@ export default function CallScreen() {
 
       // Stop existing stream if any
       if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((track: any) => track.stop());
+        try {
+          localStreamRef.current.getTracks().forEach((track: any) => track.stop());
+        } catch {}
       }
 
-      const constraints = {
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          channelCount: 1,
-          sampleRate: 48000,
-          sampleSize: 16
-        },
-        video: isVideoCall ? {
-          width: { min: 320, ideal: 640, max: 1280 },
-          height: { min: 240, ideal: 480, max: 720 },
-          frameRate: { min: 15, ideal: 24, max: 30 },
-          facingMode: 'user'
-        } : false
+      // Use minimal, broadly supported constraints on Android (RN WebRTC)
+      const constraints: any = {
+        audio: true,
+        video: isVideoCall ? { facingMode: 'user', width: 640, height: 480 } : false
       };
 
-      console.log('Getting user media with constraints:', constraints);
       const stream = await mediaDevices.getUserMedia(constraints);
-      
-      // Enable speaker by default
-      await mediaDevices.setAudioOutput('speaker');
-      
+
+      // Try to route audio to speaker; ignore if not supported on device
+      try {
+        await mediaDevices.setAudioOutput('speaker');
+      } catch {}
+
       localStreamRef.current = stream;
       setLocalStream(stream);
-      
-      console.log('Got local stream with tracks:', stream.getTracks().map((t: any) => t.kind));
       return true;
     } catch (error: any) {
-      console.error('Error getting local media:', error);
-      setPermissionError(`Failed to access ${isVideoCall ? 'camera and microphone' : 'microphone'}. Please check your permissions.`);
-      return false;
+      // Fallback: retry once with the most basic constraints
+      try {
+        const fallback = await mediaDevices.getUserMedia({ audio: true, video: isVideoCall ? true : false });
+        try {
+          await mediaDevices.setAudioOutput('speaker');
+        } catch {}
+        localStreamRef.current = fallback;
+        setLocalStream(fallback);
+        return true;
+      } catch (e) {
+        setPermissionError(`Failed to access ${isVideoCall ? 'camera and microphone' : 'microphone'}. Please check your permissions.`);
+        return false;
+      }
     }
   };
 
@@ -907,7 +907,7 @@ export default function CallScreen() {
               style={styles.additionalControlButton}
               onPress={requestVideoUpgrade}
             >
-              <FontAwesome name="video-camera" size={20} color="#FFFFFF" />
+              <ThemedText style={styles.additionalControlLabel}>Video Call Coming Soon</ThemedText>
               <ThemedText style={styles.additionalControlLabel}>Video</ThemedText>
             </TouchableOpacity>
           </View>
