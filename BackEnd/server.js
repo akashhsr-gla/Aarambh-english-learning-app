@@ -51,6 +51,8 @@ app.use(cors({
       'http://10.0.2.2:8081',   // Android emulator
       'exp://localhost:19000',  // Expo development
       'exp://127.0.0.1:19000',
+      'https://www.aarambhapp.com', // Production website
+      'https://aarambhapp.com', // Production website (without www)
       process.env.FRONTEND_URL
     ].filter(Boolean);
     
