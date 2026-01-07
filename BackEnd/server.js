@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const http = require('http');
 require('dotenv').config({ path: './env.local' });
 
 const connectDB = require('./config/database');
@@ -100,6 +101,15 @@ if (process.env.NODE_ENV === 'development') {
 } else {
   app.use(morgan('combined'));
 }
+
+// Keep-alive endpoint (for preventing server spin-down)
+app.get('/keepalive', (req, res) => {
+  res.json({ 
+    success: true, 
+    message: 'Server is alive',
+    timestamp: new Date().toISOString()
+  });
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -319,13 +329,48 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🌐 Network accessible at: http://192.168.1.4:${PORT}`);
   console.log(`🔍 Test endpoint: http://localhost:${PORT}/test`);
   console.log(`💚 Health check: http://localhost:${PORT}/health`);
+  console.log(`💓 Keep-alive: http://localhost:${PORT}/keepalive`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🔐 MongoDB: Connected`);
+  
+  // Start keep-alive self-ping to prevent server spin-down
+  startKeepAlive();
 });
+
+// Keep-alive self-ping function to prevent server spin-down
+let keepAliveInterval = null;
+
+function startKeepAlive() {
+  // Only run in production (Render deployment)
+  if (process.env.NODE_ENV === 'production' || process.env.RENDER) {
+    const serverUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+    
+    keepAliveInterval = setInterval(() => {
+      const url = `${serverUrl}/keepalive`;
+      http.get(url, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          console.log(`💓 Keep-alive ping successful at ${new Date().toISOString()}`);
+        });
+      }).on('error', (err) => {
+        console.error('💓 Keep-alive ping error:', err.message);
+      });
+    }, 30000); // Ping every 30 seconds
+    
+    console.log('💓 Keep-alive mechanism started (pinging every 30 seconds)');
+  } else {
+    console.log('💓 Keep-alive disabled (not in production)');
+  }
+}
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM received. Shutting down gracefully...');
+  if (keepAliveInterval) {
+    clearInterval(keepAliveInterval);
+    console.log('💓 Keep-alive interval cleared');
+  }
   server.close(() => {
     console.log('Process terminated');
   });
