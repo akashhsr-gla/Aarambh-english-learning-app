@@ -53,13 +53,11 @@ app.use(cors({
       'exp://127.0.0.1:19000',
       'https://www.aarambhapp.com', // Production website
       'https://aarambhapp.com', // Production website (without www)
+      'https://aarambhappsite-h9o1a1j1x-akashxsrs-projects.vercel.app', // Vercel preview deployment
       process.env.FRONTEND_URL
     ].filter(Boolean);
     
-    // Allow Vercel preview deployments (pattern: *.vercel.app)
-    const isVercelPreview = origin && origin.includes('.vercel.app');
-    
-    if (allowedOrigins.indexOf(origin) !== -1 || isVercelPreview) {
+    if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
       console.log('CORS: Blocked origin:', origin);
