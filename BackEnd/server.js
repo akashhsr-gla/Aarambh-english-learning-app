@@ -54,6 +54,7 @@ app.use(cors({
       'https://www.aarambhapp.com', // Production website
       'https://aarambhapp.com', // Production website (without www)
       'https://aarambhappsite-h9o1a1j1x-akashxsrs-projects.vercel.app', // Vercel preview deployment
+      'https://aarambhappsite-4l8pxm7cb-akashxsrs-projects.vercel.app', // Vercel preview deployment
       process.env.FRONTEND_URL
     ].filter(Boolean);
     
