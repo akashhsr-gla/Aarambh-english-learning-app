@@ -57,7 +57,7 @@ app.use(cors({
     ].filter(Boolean);
     
     // Allow Vercel preview deployments (pattern: *.vercel.app)
-    const isVercelPreview = origin && origin.endsWith('.vercel.app');
+    const isVercelPreview = origin && origin.includes('.vercel.app');
     
     if (allowedOrigins.indexOf(origin) !== -1 || isVercelPreview) {
       callback(null, true);
