@@ -5,6 +5,7 @@ const compression = require('compression');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const http = require('http');
+const https = require('https');
 require('dotenv').config({ path: './env.local' });
 
 const connectDB = require('./config/database');
