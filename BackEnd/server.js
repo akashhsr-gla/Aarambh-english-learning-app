@@ -345,10 +345,12 @@ function startKeepAlive() {
   // Only run in production (Render deployment)
   if (process.env.NODE_ENV === 'production' || process.env.RENDER) {
     const serverUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
+    const isHttps = serverUrl.startsWith('https://');
+    const httpModule = isHttps ? https : http;
     
     keepAliveInterval = setInterval(() => {
       const url = `${serverUrl}/keepalive`;
-      http.get(url, (res) => {
+      httpModule.get(url, (res) => {
         let data = '';
         res.on('data', (chunk) => { data += chunk; });
         res.on('end', () => {
@@ -360,6 +362,7 @@ function startKeepAlive() {
     }, 30000); // Ping every 30 seconds
     
     console.log('💓 Keep-alive mechanism started (pinging every 30 seconds)');
+    console.log(`💓 Keep-alive URL: ${serverUrl}/keepalive`);
   } else {
     console.log('💓 Keep-alive disabled (not in production)');
   }
