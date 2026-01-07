@@ -56,7 +56,10 @@ app.use(cors({
       process.env.FRONTEND_URL
     ].filter(Boolean);
     
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    // Allow Vercel preview deployments (pattern: *.vercel.app)
+    const isVercelPreview = origin && origin.endsWith('.vercel.app');
+    
+    if (allowedOrigins.indexOf(origin) !== -1 || isVercelPreview) {
       callback(null, true);
     } else {
       console.log('CORS: Blocked origin:', origin);
