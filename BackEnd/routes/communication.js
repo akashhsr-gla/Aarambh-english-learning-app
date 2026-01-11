@@ -4,6 +4,7 @@ const { body, validationResult } = require('express-validator');
 const Session = require('../models/Session');
 const User = require('../models/User');
 const { authenticateToken, requireSubscription } = require('../middleware/auth');
+const { requireFeatureAccess, requireCallFeatureAccess, checkFeatureAccess } = require('../middleware/featureAccess');
 
 // Validation middleware
 const validateCallRequest = [
@@ -30,6 +31,27 @@ router.post('/matchmaking/find-partner', authenticateToken, [
   body('sessionType').isIn(['chat', 'voice_call', 'video_call']).withMessage('Invalid session type'),
   body('preferredLanguageLevel').optional().isIn(['beginner', 'intermediate', 'advanced']).withMessage('Invalid language level')
 ], async (req, res) => {
+  // STRICT: Check feature access for paid call types
+  const { sessionType } = req.body;
+  if (sessionType === 'video_call') {
+    const accessCheck = await checkFeatureAccess(req.user._id, 'video_calls');
+    if (!accessCheck.hasAccess) {
+      return res.status(403).json({
+        success: false,
+        message: 'Video calls require an active subscription. Please upgrade to access this feature.',
+        code: 'SUBSCRIPTION_REQUIRED'
+      });
+    }
+  } else if (sessionType === 'voice_call') {
+    const accessCheck = await checkFeatureAccess(req.user._id, 'voice_calls');
+    if (!accessCheck.hasAccess) {
+      return res.status(403).json({
+        success: false,
+        message: 'Voice calls require an active subscription. Please upgrade to access this feature.',
+        code: 'SUBSCRIPTION_REQUIRED'
+      });
+    }
+  }
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -187,6 +209,27 @@ router.post('/matchmaking/find-partner', authenticateToken, [
 
 // 2. INITIATE ONE-TO-ONE CALL (Video or Voice)
 router.post('/call/initiate', authenticateToken, validateCallRequest, async (req, res) => {
+  // STRICT: Check feature access BEFORE processing
+  const { callType } = req.body;
+  if (callType === 'video') {
+    const accessCheck = await checkFeatureAccess(req.user._id, 'video_calls');
+    if (!accessCheck.hasAccess) {
+      return res.status(403).json({
+        success: false,
+        message: 'Video calls require an active subscription. Please upgrade to access this feature.',
+        code: 'SUBSCRIPTION_REQUIRED'
+      });
+    }
+  } else if (callType === 'voice') {
+    const accessCheck = await checkFeatureAccess(req.user._id, 'voice_calls');
+    if (!accessCheck.hasAccess) {
+      return res.status(403).json({
+        success: false,
+        message: 'Voice calls require an active subscription. Please upgrade to access this feature.',
+        code: 'SUBSCRIPTION_REQUIRED'
+      });
+    }
+  }
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -440,6 +483,27 @@ router.post('/call/:sessionId/join', authenticateToken, async (req, res) => {
       });
     }
 
+    // STRICT: Check feature access for paid call types
+    if (session.sessionType === 'video_call') {
+      const accessCheck = await checkFeatureAccess(req.user._id, 'video_calls');
+      if (!accessCheck.hasAccess) {
+        return res.status(403).json({
+          success: false,
+          message: 'Video calls require an active subscription. Please upgrade to access this feature.',
+          code: 'SUBSCRIPTION_REQUIRED'
+        });
+      }
+    } else if (session.sessionType === 'voice_call') {
+      const accessCheck = await checkFeatureAccess(req.user._id, 'voice_calls');
+      if (!accessCheck.hasAccess) {
+        return res.status(403).json({
+          success: false,
+          message: 'Voice calls require an active subscription. Please upgrade to access this feature.',
+          code: 'SUBSCRIPTION_REQUIRED'
+        });
+      }
+    }
+
     // Check if session is active or scheduled
     if (!['active', 'scheduled'].includes(session.status)) {
       return res.status(400).json({
@@ -577,6 +641,27 @@ router.put('/call/:sessionId/participant/state', authenticateToken, async (req, 
         success: false,
         message: 'Call session not found'
       });
+    }
+
+    // STRICT: Check feature access for paid call types
+    if (session.sessionType === 'video_call') {
+      const accessCheck = await checkFeatureAccess(req.user._id, 'video_calls');
+      if (!accessCheck.hasAccess) {
+        return res.status(403).json({
+          success: false,
+          message: 'Video calls require an active subscription. Please upgrade to access this feature.',
+          code: 'SUBSCRIPTION_REQUIRED'
+        });
+      }
+    } else if (session.sessionType === 'voice_call') {
+      const accessCheck = await checkFeatureAccess(req.user._id, 'voice_calls');
+      if (!accessCheck.hasAccess) {
+        return res.status(403).json({
+          success: false,
+          message: 'Voice calls require an active subscription. Please upgrade to access this feature.',
+          code: 'SUBSCRIPTION_REQUIRED'
+        });
+      }
     }
 
     // Find participant
@@ -1015,6 +1100,27 @@ router.get('/session/:sessionId', authenticateToken, async (req, res) => {
         success: false,
         message: 'You are not a participant in this session'
       });
+    }
+
+    // STRICT: Check feature access for paid call types
+    if (session.sessionType === 'video_call') {
+      const accessCheck = await checkFeatureAccess(req.user._id, 'video_calls');
+      if (!accessCheck.hasAccess) {
+        return res.status(403).json({
+          success: false,
+          message: 'Video calls require an active subscription. Please upgrade to access this feature.',
+          code: 'SUBSCRIPTION_REQUIRED'
+        });
+      }
+    } else if (session.sessionType === 'voice_call') {
+      const accessCheck = await checkFeatureAccess(req.user._id, 'voice_calls');
+      if (!accessCheck.hasAccess) {
+        return res.status(403).json({
+          success: false,
+          message: 'Voice calls require an active subscription. Please upgrade to access this feature.',
+          code: 'SUBSCRIPTION_REQUIRED'
+        });
+      }
     }
 
     res.json({

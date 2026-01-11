@@ -70,7 +70,13 @@ export default function CallScreen() {
   const [localStream, setLocalStream] = useState<any>(null);
   const [remoteStream, setRemoteStream] = useState<any>(null);
 
-  const { canAccess: canMakeCalls, featureInfo: callFeatureInfo } = useFeatureAccess('video_calls');
+  // STRICT: Check access for both video and voice calls
+  const { canAccess: canMakeVideoCalls, featureInfo: videoCallFeatureInfo } = useFeatureAccess('video_calls');
+  const { canAccess: canMakeVoiceCalls, featureInfo: voiceCallFeatureInfo } = useFeatureAccess('voice_calls');
+  
+  // Determine if user can make the requested call type
+  const canMakeCalls = isVideoCall ? canMakeVideoCalls : canMakeVoiceCalls;
+  const callFeatureInfo = isVideoCall ? videoCallFeatureInfo : voiceCallFeatureInfo;
   
   const cancelingRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -423,6 +429,24 @@ export default function CallScreen() {
 
   // Find partner and initiate call
   const findPartnerAndInitiateCall = async () => {
+    // STRICT: Check access before attempting to find partner
+    if (!canMakeCalls) {
+      setError('This feature requires an active subscription. Please upgrade to access video/voice calls.');
+      setCallStatus('error');
+      Alert.alert(
+        'Subscription Required',
+        `${isVideoCall ? 'Video' : 'Voice'} calls require an active subscription. Would you like to upgrade?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Upgrade', 
+            onPress: () => navigation.navigate('SubscriptionScreen' as never)
+          }
+        ]
+      );
+      return;
+    }
+
     try {
       setCallStatus('finding');
       setError(null);
@@ -508,12 +532,19 @@ export default function CallScreen() {
 
   // Initialize on mount
   useEffect(() => {
+    // STRICT: Prevent access if user doesn't have subscription
+    if (!canMakeCalls) {
+      setError('This feature requires an active subscription. Please upgrade to access video/voice calls.');
+      setCallStatus('error');
+      return;
+    }
+    
     findPartnerAndInitiateCall();
     
     return () => {
       cleanup();
     };
-  }, []);
+  }, [canMakeCalls]);
 
   // Initialize WebRTC when session is active
   useEffect(() => {

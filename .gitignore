@@ -44,6 +44,3 @@ BackEnd/env.local
 
 # EAS Build configuration
 eas.json
-
-# App configuration (contains sensitive keys)
-app.json

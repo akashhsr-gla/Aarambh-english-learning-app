@@ -13,22 +13,51 @@ export const useFeatureAccess = (featureKey) => {
       setIsLoading(true);
       setError(null);
 
-      // Always refresh features to get latest data
+      // STRICT: Always verify with server for paid features
+      // First check locally for quick UI feedback
       const loaded = await featureService.refreshFeatures();
       if (!loaded) {
         setError('Failed to load features');
+        setCanAccess(false);
+        setIsLoading(false);
         return;
       }
 
-      // Check access
-      const access = featureService.canAccess(featureKey);
+      const localAccess = featureService.canAccess(featureKey);
       const info = featureService.getFeatureInfo(featureKey);
 
-      setCanAccess(access);
-      setFeatureInfo(info);
+      // If feature is paid, ALWAYS verify with server (cannot trust client-side)
+      if (info && info.isPaid) {
+        try {
+          const serverCheck = await featureService.checkFeatureAccess(featureKey);
+          if (serverCheck && serverCheck.canAccess !== undefined) {
+            // Server response is authoritative
+            setCanAccess(serverCheck.canAccess);
+            setFeatureInfo({
+              ...info,
+              canAccess: serverCheck.canAccess,
+              reason: serverCheck.reason
+            });
+          } else {
+            // Fallback to local check if server check fails
+            setCanAccess(localAccess);
+            setFeatureInfo(info);
+          }
+        } catch (serverError) {
+          console.error('Server feature check failed, using local:', serverError);
+          // On server error, deny access for paid features (fail secure)
+          setCanAccess(false);
+          setFeatureInfo({ ...info, canAccess: false, reason: 'server_verification_failed' });
+        }
+      } else {
+        // Free features - use local check
+        setCanAccess(localAccess);
+        setFeatureInfo(info);
+      }
     } catch (err) {
       console.error('Error checking feature access:', err);
       setError(err.message);
+      setCanAccess(false);
     } finally {
       setIsLoading(false);
     }

@@ -4,6 +4,7 @@ import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { ThemedText } from '../../components/ThemedText';
 import { ThemedView } from '../../components/ThemedView';
 import { useFeatureAccess } from '../hooks/useFeatureAccess';
+import featureService from '../services/featureService';
 
 const FeatureAccessWrapper = ({ 
   featureKey, 
@@ -14,9 +15,23 @@ const FeatureAccessWrapper = ({
   style,
   navigation
 }) => {
-  const { canAccess, isLoading, featureInfo, recordUsage } = useFeatureAccess(featureKey);
+  const { canAccess, isLoading, featureInfo, recordUsage, refresh } = useFeatureAccess(featureKey);
 
   const handlePress = async () => {
+    // STRICT: For paid features, always verify with server before allowing action
+    if (featureInfo && featureInfo.isPaid) {
+      // Refresh access check from server
+      await refresh();
+      // Re-check after refresh
+      const updatedCheck = await featureService.checkFeatureAccess(featureKey);
+      if (updatedCheck && !updatedCheck.canAccess) {
+        if (showUpgradePrompt) {
+          showUpgradeAlert();
+        }
+        return;
+      }
+    }
+
     if (canAccess) {
       await recordUsage();
       if (onAccessDenied) {

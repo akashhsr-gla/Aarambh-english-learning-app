@@ -92,8 +92,14 @@ android {
         applicationId 'com.anonymous.AarambhApp'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "1.0.1"
+        versionCode 4
+        versionName "1.0.4"
+        
+        // 16 KB page size support for Android 15+ (required for API 35+)
+        // This ensures native libraries are compatible with 16 KB memory page sizes
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+        }
     }
     signingConfigs {
         debug {
@@ -119,6 +125,8 @@ android {
     }
     packagingOptions {
         jniLibs {
+            // Disable legacy packaging to ensure 16 KB page size compatibility
+            // Legacy packaging can cause alignment issues with 16 KB pages
             useLegacyPackaging (findProperty('expo.useLegacyPackaging')?.toBoolean() ?: false)
         }
     }

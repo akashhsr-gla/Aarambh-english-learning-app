@@ -346,19 +346,31 @@ function startKeepAlive() {
   if (process.env.NODE_ENV === 'production' || process.env.RENDER) {
     const serverUrl = process.env.RENDER_EXTERNAL_URL || `http://localhost:${PORT}`;
     const isHttps = serverUrl.startsWith('https://');
-    const httpModule = isHttps ? https : http;
     
     keepAliveInterval = setInterval(() => {
       const url = `${serverUrl}/keepalive`;
-      httpModule.get(url, (res) => {
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
-        res.on('end', () => {
-          console.log(`💓 Keep-alive ping successful at ${new Date().toISOString()}`);
+      
+      if (isHttps) {
+        https.get(url, (res) => {
+          let data = '';
+          res.on('data', (chunk) => { data += chunk; });
+          res.on('end', () => {
+            console.log(`💓 Keep-alive ping successful at ${new Date().toISOString()}`);
+          });
+        }).on('error', (err) => {
+          console.error('💓 Keep-alive ping error:', err.message);
         });
-      }).on('error', (err) => {
-        console.error('💓 Keep-alive ping error:', err.message);
-      });
+      } else {
+        http.get(url, (res) => {
+          let data = '';
+          res.on('data', (chunk) => { data += chunk; });
+          res.on('end', () => {
+            console.log(`💓 Keep-alive ping successful at ${new Date().toISOString()}`);
+          });
+        }).on('error', (err) => {
+          console.error('💓 Keep-alive ping error:', err.message);
+        });
+      }
     }, 30000); // Ping every 30 seconds
     
     console.log('💓 Keep-alive mechanism started (pinging every 30 seconds)');
